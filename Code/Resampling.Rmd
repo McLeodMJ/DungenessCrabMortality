@@ -1,0 +1,375 @@
+---
+title: "Resampling"
+author: "Montana McLeod"
+date: "8/31/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/Documents/THESIS/Dungeness_crab/DungenessCrabMortality/Code")
+```
+
+
+# Amending data to be resampled by Date and Pot
+```{r}
+load("Molt_Males.Rdata")
+#load("D.crab.Rdata")
+'
+
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(reshape2)
+suppressPackageStartupMessages("Done")
+```
+
+# What Pots are missing?
+```{r}
+# Check the total pots used in sample in order to account for any missing pots in sub-male df
+#Exp_total_pots <- aggregate(Total.pots ~ Date, Up_data_N, max)
+#NEED to separate the values that are not sufficent for analysis 
+#Exp_total_pots <- Exp_total_pots[c(3,5,13,18), ] 
+
+# counts the total number of crabs per pot  
+Apr_Sept_CPUE<- Apr_Sept_Sub %>% 
+  select(Date, Month, Year, Pot, Total.pots, Total.crabs, Effort) %>% 
+  group_by(Date, Month, Year, Pot, Total.pots, Total.crabs, Effort) %>% 
+  count(Pot)
+colnames(Apr_Sept_CPUE)[colnames( Apr_Sept_CPUE) == "n"]  <- "Crabs.per.Pot"
+Apr_Sept_CPUE <- as.data.frame(Apr_Sept_CPUE)
+
+#Reorder by date
+  index <- with(Apr_Sept_CPUE, order(Date, Pot)) #organizes by month then year
+  Apr_Sept_CPUE <- Apr_Sept_CPUE[index,]
+
+Apr_Sept_CPUE <- Apr_Sept_CPUE[c(1:10, 18:26),] #save only the last date in sept for CPUE calc needing one end pt
+```
+
+
+# Set up DF of Pre-Post Molt dates from 2014 & 2020 w/ unaccounted pots 
+```{r}
+# Aggregate across Date & Pot
+#subset(Apr_Sept_CPUE, Month != )
+Resample_CPUE <- aggregate(cbind(Year, Month, Total.pots, Total.crabs, Effort, Crabs.per.Pot) ~ Date + Pot, data = Apr_Sept_CPUE, mean)
+
+#Reorder by date
+  index <- with(Resample_CPUE, order(Date,Pot)) #organizes by month then year
+  Resample_CPUE <- Resample_CPUE[index,]
+  Resample_CPUE <- Resample_CPUE[, c(1,3:4,2,5:8)]
+
+ empty <- c(2, 1:2, 4:6, 9:10, 4, 11)
+# Add rows for unaccounted sub-legal males from each pot of total pots
+     df <- data.frame(Date=rep(NA,length(empty)),
+                      Month= c(rep(4, 8), rep(9,2) ),
+                      Year= c(2014, rep(2020,(length(empty)-1))),
+                      Pot= empty, 
+                      Total.pots= rep(0,length(empty)), 
+                      Total.crabs= rep(0,length(empty)),
+                      Effort = rep(0,length(empty)),
+                      Crabs.per.Pot = rep(0,length(empty)))
+Resample_CPUE <- rbind(Resample_CPUE, df)
+
+#Me poorly reorganizing to account for 0 sub-legal crabs in the pots & placing them in order
+Resample_CPUE <- Resample_CPUE[c(1, 20, 2:5, 21:22, 6, 23:25, 7:8, 26:27, 9:13, 28, 14:19, 29), ]
+Resample_CPUE$Date[2] <- Resample_CPUE$Date[1]
+Resample_CPUE$Date[c(7:8,10:12,15:16)] <- Resample_CPUE$Date[9]
+Resample_CPUE$Date[22] <- Resample_CPUE$Date[21]
+Resample_CPUE$Date[29] <- Resample_CPUE$Date[28]
+```
+
+
+# Randomizing over total no. of crabs per pot
+```{r}
+ #Resample_CPUE$Crabs.per.Pot <- ifelse(Resample_CPUE$Total.pots != 0, sample(Resample_CPUE$Crabs.per.Pot, nrow(Resample_CPUE), replace= TRUE), 0)
+
+# run resampling throug 1000 iterations
+Sim_CPUE <- Resample_CPUE # rename so dont overright original resample_cpue
+Sim_CPUE$Crabs.per.Pot <- rep(NA, nrow(Sim_CPUE)) #to overwrite the real values w/ sample()
+pots <- aggregate(Total.pots ~ Date, data=Resample_CPUE, max) #no. for each randomization
+pots <- pots[,2]
+Nat_Mort <- data.frame(Sample_Date = as.character(unique(Resample_CPUE$Date))) #df to store iterations
+
+tstep = 1000
+  for (j in 2:tstep){
+    
+    i=1 # starting point in column
+    for(p in pots){
+         Sim_CPUE$Crabs.per.Pot[i:(i+p-1)]  <- sample(Resample_CPUE$Crabs.per.Pot[i:(i+p-1)], p , replace= T)
+         i= (i+p) #creates new starting pt
+         
+         #Need to limit the loop
+          if(i == 30){
+             break
+           }
+    }
+    x <- aggregate(cbind(Total.pots, Effort) ~ Date + Month + Year, data = Sim_CPUE, max) #takes consistent values
+    y <- aggregate(Crabs.per.Pot ~ Date + Month + Year, data = Sim_CPUE, sum) #takes sum of crabs
+    Est_Mort_CPUE <- merge(x,y, all=TRUE) #averages by year
+    
+    # CPUE = # of crabs caught in a string of traps / standard effort
+    Est_Mort_CPUE$CPUE <- Est_Mort_CPUE$Crabs.per.Pot / Est_Mort_CPUE$Effort
+        
+      # Making a Julian date by the year 
+      Est_Mort_CPUE$J.date <- julian.Date(Est_Mort_CPUE$Date, as.Date("2014-01-01"), by= 'Year' )
+        for (i in 1:nrow(Est_Mort_CPUE)){
+           if(Est_Mort_CPUE$Year[i] != 2014) {
+             n = Est_Mort_CPUE$Year[i] - 2014;
+             Est_Mort_CPUE$J.date[i] <- Est_Mort_CPUE$J.date[i] - (365 * n) 
+           }
+        }
+      Est_Mort_CPUE$N.Mort <- rep(NA, nrow(Est_Mort_CPUE)) #NULL column
+      
+      
+#estimating mortality for samples in same year but different months [zhang eqn]
+  for(i in 2:nrow(Est_Mort_CPUE)){
+        if(Est_Mort_CPUE$Year[i] == Est_Mort_CPUE$Year[i-1] & Est_Mort_CPUE$Month[i] !=   Est_Mort_CPUE$Month[i-1]) {
+         Est_Mort_CPUE$N.Mort[i] <- (-1/( (Est_Mort_CPUE$J.date[i]) - (Est_Mort_CPUE$J.date[i-1]) ) )* log(Est_Mort_CPUE$CPUE[i] / Est_Mort_CPUE$CPUE[i-1] )  }
+      }
+
+   # store the natural mortalities for each iteration
+  Nat_Mort[,j]  <- Est_Mort_CPUE$N.Mort
+  
+  }
+
+Nat_Mort <- Nat_Mort[c(2,4), ] #keeps only the estimates
+Nat_Mort <- do.call(data.frame,lapply(Nat_Mort, function(x) replace(x, is.infinite(x),NA)))
+
+# Calculate variance across Resampling iterations 
+Nat_Mort$Mean <- rep(NA, nrow(Nat_Mort))
+Nat_Mort$Variance <- rep(NA, nrow(Nat_Mort))
+for( j in 1:nrow(Nat_Mort)){
+  z <- unlist(Nat_Mort[j,2:tstep])
+  Nat_Mort$Mean[j] <- mean(na.omit(z))
+  Nat_Mort$Variance[j] <- var(na.omit(z))
+}
+Nat_Mort <- melt(Nat_Mort)
+
+#Nat_Mort$Real_N.Mort <-Orig_N_mort # adds column of real values based on our data
+Avgs_CPUE <- Nat_Mort[1999:2002,] 
+Avgs_CPUE[5:8,1] <- Avgs_CPUE$Sample_Date[1:4]
+Avgs_CPUE[,4] <- c( rep("daily", 4), rep("annual", 4))
+Avgs_CPUE[5:8,2] <- Avgs_CPUE$variable[1:4]
+Avgs_CPUE[5:8,3] <- Avgs_CPUE$value[1:4] * 365
+
+ggplot(Nat_Mort[c(1:1998),], aes(Sample_Date, value))+
+  geom_boxplot()+
+   labs(title= "Variance of Natural Mortality Rates in Sub-legal Males", x= "Date", y= "Daily Natural Mortality Rate")
+```
+
+
+
+
+# Resampling of Our calculation [INOut]
+```{r}
+# Function for molt surv. 
+surv.molt <- function(y){
+  
+#create pre and post df for each size class 
+Pre_molt_juv <- subset(Resample_InOut, Carapace.Width <= 139 & Month == "April" & Year == y) #juveniles moving into sub-adults
+    if(nrow(Pre_molt_juv) == 0){
+      Pre_molt_juv[1,5] <- 0
+    }
+
+# sub-adults have to be spilt into two b/c of calc
+Pre_molt_sub1 <- subset(Resample_InOut, Carapace.Width %in% c(140:149) & Month == "April"& Year == y)
+    if(nrow(Pre_molt_sub1) == 0){
+      Pre_molt_sub1[1,5] <- 0
+    }
+
+Pre_molt_sub2 <- subset(Resample_InOut, Carapace.Width %in% c(150:159) & Month == "April"& Year == y)
+    if(nrow(Pre_molt_sub2) == 0){
+      Pre_molt_sub2[1,5] <- 0
+    }
+Post_molt_sub <- subset(Resample_InOut, Carapace.Width %in% c(140:159) & Month == "September" & Year == y)
+    if(nrow(Post_molt_sub) == 0){
+      Post_molt_sub[1,5] <- 0
+    }
+
+#create totals for pre & post-molt to get prop. 
+Pre_total <-subset(Resample_InOut, Month == "April" & Year == y)
+Post_total <- subset(Resample_InOut,  Month == "September" & Year == y)
+
+
+molt.in = nrow(Pre_molt_juv) * mean(Pre_molt_juv$Molt.prob) 
+molt.out = (nrow(Pre_molt_sub1)* mean(Pre_molt_sub1$Molt.prob)) + (nrow(Pre_molt_sub2)* mean(Pre_molt_sub2$Molt.prob)) 
+ survived <- (nrow(Post_molt_sub) + molt.in - molt.out) / ((nrow(Pre_molt_sub1) + nrow(Pre_molt_sub2)))
+ return(survived)
+}
+
+# creates a new df to store the randomized data
+Resample_InOut <- Ap_Sept_Data[, 1:4]
+#Reorder by date
+  index <- with(Resample_InOut, order(Date)) #organizes by month then year
+  Resample_InOut <- Resample_InOut[index,]
+  Resample_InOut$Carapace.Width <- rep(NA, nrow(Resample_InOut))
+
+# running iterations to recieve an avg  
+Nat_Mort_InOut <- data.frame(Sample_Date = c("2014-09-17","2020-09-15"))
+dates <-as.data.frame(table(Ap_Sept_Data$Date)) #store total # of crabs per sample date to use in loop
+dates <- dates[,2]
+
+for(j in 1: tstep){
+  #Run randomizer
+    #Resample_InOut$Carapace.Width <- sample(Ap_Sept_Data$Carapace.Width, nrow(Ap_Sept_Data), replace= TRUE)
+    i=1 # starting point in column
+    for(d in dates){
+         Resample_InOut$Carapace.Width[i:(i+d-1)]  <- sample(Ap_Sept_Data$Carapace.Width[i:(i+d-1)], d , replace= T)
+         i= (i+d) #creates new starting pt
+         
+         #Need to limit the loop
+          if(i == 348){
+             break
+           }
+    }
+    
+    Resample_InOut$ Molt.prob <- rep(NA, nrow(Resample_InOut))
+  #estimating mort prob. based off of zhang's equation(figure 3)
+  for(i in 1:nrow(Resample_InOut)){
+    if(Resample_InOut$Carapace.Width[i] <= 150)
+    { Resample_InOut$Molt.prob[i] <- (-0.0014* Resample_InOut$Carapace.Width[i]) + 1.14 }
+  
+    if(Resample_InOut$Carapace.Width[i] > 150)
+    { Resample_InOut$Molt.prob[i] <- (-0.014* Resample_InOut$Carapace.Width[i]) + 2.71 }
+    
+    if(Resample_InOut$Carapace.Width[i] > 193)
+    { Resample_InOut$Molt.prob[i] <- 0 }
+  }
+
+  Est_Mort_InOut <- rbind(surv.molt(2014), surv.molt(2020)) 
+  Nat_Mort_InOut[,j+1] <- Est_Mort_InOut
+}
+
+# Calculate variance across Resampling iterations 
+Nat_Mort_InOut$Mean <- rep(NA, nrow(Nat_Mort_InOut))
+Nat_Mort_InOut$Variance <- rep(NA, nrow(Nat_Mort_InOut))
+for( j in 1:nrow(Nat_Mort_InOut)){
+  z <- unlist(Nat_Mort_InOut[j,2:(tstep+1)])
+  Nat_Mort_InOut$Mean[j] <- mean(na.omit(z))
+  Nat_Mort_InOut$Variance[j] <- var(na.omit(z))
+}
+Nat_Mort_InOut <- melt(Nat_Mort_InOut)
+###Nat_Mort_InOut <- subset(Nat_Mort_InOut, Sample_Date == "2014-09-17" |  Sample_Date == "2020-09-15")
+
+#Nat_Mort$Real_N.Mort <-Orig_N_mort # adds column of real values based on our data
+Avgs_InOut <- Nat_Mort_InOut[2001:2004,] 
+
+
+ggplot(Nat_Mort_InOut[c(1:2000),], aes(Sample_Date, value))+
+  geom_boxplot()+
+  labs(title= "Variance of Natural Mortality Rates in Sub-legal Males", x= "Date", y= "Daily Natural Mortality Rate")
+
+```
+### BELOW IS OLD CODE ######
+
+
+
+
+
+
+
+
+
+# General bootstrapping
+```{r}
+## calculate beta distrivution parameters using MOM from week 2
+beta.mom<-function(mean,sd){
+  v<-sd**2
+  x<-mean
+  a<-x*(x*(1-x)/v-1)
+  b<-(1-x)*(x*(1-x)/v-1)
+  c(a,b)
+}
+## calculate beta parameters
+beta.prm<-beta.mom(molt.2014, 0.05)
+## generate harvest rates from beta distrubution
+sim.InOut<- rbeta(1000,beta.prm[1],beta.prm[2])
+
+mean(rand.2014)
+sd(rand.2014)
+quantile(rand.2014,c(.025,0.975))
+
+
+#Resampling for our calc.
+
+
+```
+
+
+
+
+# 2015 jan/ may CPUE check
+```{r}
+Jan_May_sub <- subset(Up_data_N, Year ==2015 & Sex ==1 & Carapace.Width %in% c(140:149) & Month == "January" | Month == "May", select = c(Date : Carapace.Width, Pot, Soak.Time.hr, Total.pots, Effort))
+
+Jan_May_CPUE<- Jan_May_sub %>% 
+  select(Date, Month, Year, Pot, Total.pots, Effort) %>% 
+  group_by(Date, Month, Year, Pot, Total.pots, Effort) %>% 
+  count(Pot)
+colnames(Jan_May_CPUE)[colnames( Jan_May_CPUE) == "n"]  <- "Crabs.per.Pot"
+Jan_May_CPUE <- as.data.frame(Jan_May_CPUE)
+
+#Reorder by date
+index <- with(Jan_May_CPUE, order(Date, Pot)) #organizes by month then year
+Jan_May_CPUE <- Jan_May_CPUE[index,]
+
+# run resampling throug 1000 iterations
+Nat_Mort <- data.frame(Sample_Date = as.character(unique(Jan_May_CPUE$Date)))
+Sim_CPUE <- Jan_May_CPUE # rename so dont overright original resample_cpue
+
+tstep = 1000
+for (j in 1:tstep){
+  #Randomization of crabs per pot
+  Sim_CPUE$Crabs.per.Pot  <- sample(Jan_May_CPUE$Crabs.per.Pot, nrow(Jan_May_CPUE), replace= TRUE)
+  
+  x <- aggregate(cbind(Total.pots, Effort) ~ Date + Month + Year, data = Sim_CPUE, max) #takes consistent values
+  y <- aggregate(Crabs.per.Pot ~ Date + Month + Year, data = Sim_CPUE, sum) #takes sum of crabs
+  Est_Mort_CPUE <- merge(x,y, all=TRUE) #averages by year
+  
+  # CPUE = # of crabs caught in a string of traps / standard effort
+  Est_Mort_CPUE$CPUE <- Est_Mort_CPUE$Crabs.per.Pot / Est_Mort_CPUE$Effort
+  
+  # Making a Julian date by the year 
+  Est_Mort_CPUE$J.date <- julian.Date(Est_Mort_CPUE$Date, as.Date("2014-01-01"), by= 'Year' )
+  for (i in 1:nrow(Est_Mort_CPUE)){
+    if(Est_Mort_CPUE$Year[i] != 2014) {
+      n = Est_Mort_CPUE$Year[i] - 2014;
+      Est_Mort_CPUE$J.date[i] <- Est_Mort_CPUE$J.date[i] - (365 * n) 
+    }
+  }
+  Est_Mort_CPUE$N.Mort <- rep(NA, nrow(Est_Mort_CPUE)) #NULL column
+  
+  
+  #estimating mortality for samples in same year but different months [zhang eqn]
+  for(i in 2:nrow(Est_Mort_CPUE)){
+    if(Est_Mort_CPUE$Year[i] == Est_Mort_CPUE$Year[i-1] & Est_Mort_CPUE$Month[i] !=   Est_Mort_CPUE$Month[i-1]) {
+      Est_Mort_CPUE$N.Mort[i] <- (-1/( (Est_Mort_CPUE$J.date[i]) - (Est_Mort_CPUE$J.date[i-1]) ) )* log(Est_Mort_CPUE$CPUE[i] / Est_Mort_CPUE$CPUE[i-1] )  }
+  }
+  
+  # store the natural mortalities for each iteration
+  Nat_Mort[,j+1]  <- Est_Mort_CPUE$N.Mort
+  
+}
+
+Nat_Mort <- Nat_Mort[2, ] #keeps only the estimates
+#Nat_Mort[,j] <- Nat_Mort[which(is.finite(Nat_Mort$value)),j] #removes any infinite values
+Nat_Mort <- do.call(data.frame,lapply(Nat_Mort, function(x) replace(x, is.infinite(x),NA)))
+
+# Calculate variance across Resampling iterations 
+Nat_Mort$Mean <- rep(NA, nrow(Nat_Mort))
+Nat_Mort$Variance <- rep(NA, nrow(Nat_Mort))
+for( j in 1:nrow(Nat_Mort)){
+  z <- unlist(Nat_Mort[j,2:(tstep+1)])
+  Nat_Mort$Mean[j] <- mean(na.omit(z))
+  Nat_Mort$Variance[j] <- var(na.omit(z))
+}
+Nat_Mort <- melt(Nat_Mort)
+
+#Nat_Mort$Real_N.Mort <-Orig_N_mort # adds column of real values based on our data
+CPUE_avgs <- Nat_Mort[1001:1002,] 
+CPUE_avgs[3:4,1] <- CPUE_avgs$Sample_Date[1:2]
+CPUE_avgs[,4] <- c( rep("daily", 2), rep("annual", 2))
+CPUE_avgs[3:4,2] <- CPUE_avgs$variable[1:2]
+CPUE_avgs[3:4,3] <- CPUE_avgs$value[1:2] * 365
+```
+
