@@ -20,4 +20,3 @@ CPUE <- function(data){
      mutate(Effort = Soak.Time.hr * Total.pots) %>%
      mutate(CPUE = Total.crabs / Effort)
 }
-
