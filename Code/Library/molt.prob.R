@@ -14,6 +14,10 @@ molt.prob <- function(data){
     
     if(data$CW[i] > 150)
     { data$Molt.prob[i] <- (-0.014* data$CW[i]) + 2.71 }
+    
+    # >193 produces negatives
+    if(data$CW[i] > 193)
+    { data$Molt.prob[i] <- 0 }
   }
   return(data)
 }
