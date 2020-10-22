@@ -19,7 +19,6 @@ n= 1000
 
 
 
-
 molt.inc <- function(data, sex){
   post_molt <- subset(data, Sex == sex, Date : Sex) #ability ot change sex in fxn
   sim <- as.data.frame(post_molt$CW) # sets up data frame w/ initial CW
