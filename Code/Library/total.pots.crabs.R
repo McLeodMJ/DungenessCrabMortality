@@ -25,7 +25,6 @@ total.pots.crabs <- function(data){
 }
 
  
-
  ## attempt at tidyverse 
  ### need to fix it so that all the columns in select are showing
  #data <- data %>% 
