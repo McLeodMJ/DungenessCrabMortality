@@ -15,4 +15,3 @@ size.class <-function(data, sex, size){
   }
   return(sized_data)
 }
- 
