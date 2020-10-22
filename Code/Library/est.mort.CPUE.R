@@ -28,10 +28,7 @@ est.mort.CPUE <- function(source, data, limit){
   } 
 
 
-    
-  
-  
-    
+
   
 ## my attempt with tidyverse
 #estimating mortality for samples in same year but different months
