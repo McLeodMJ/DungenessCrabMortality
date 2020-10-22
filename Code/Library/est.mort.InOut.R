@@ -30,3 +30,5 @@ surv.molt <- function(data, y){
 
 # We have a lot more datapoints for september of 2020 which is why we have such a large 2020 value
 #table(Ap_Sept_Data$Date) 
+
+
