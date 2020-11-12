@@ -12,9 +12,7 @@ Folders include:
 1. Go to the **Data** folder and download the "*Estimating_Mortality.Rmd*".
 
 2. run the following code to view the bootstrapped estimate
-```{r}
 
-```
 
 #### To view distributions and graphs of datasets, in the **Code** folder, run *Distributions.Rmd*. 
 ---
