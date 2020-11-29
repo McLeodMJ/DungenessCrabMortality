@@ -69,7 +69,7 @@ Resample_CPUE[,c(1:4,13,5:12)] #doesnt work
 for(i in 1:nrow(Resample_CPUE)){
   Resample_CPUE[i, c(total.pots[i]+2) : length(Resample_CPUE)] <- NA
 }  
-
+ 
   Resample_CPUE <- melt(Resample_CPUE) #back to long format
   Resample_CPUE <- na.omit(Resample_CPUE[, c(1,3,2)]) # reorganize
   colnames(Resample_CPUE)[colnames(Resample_CPUE) == "value"] <- "Crabs.per.Pot"
@@ -80,6 +80,7 @@ for(i in 1:nrow(Resample_CPUE)){
 
 Resample_CPUE <-merge(Resample_CPUE, Sample_Dates, by="Date", all=TRUE)
 Resample_CPUE <- Resample_CPUE[, c(1,4,5,2,3,6:8)]
+
 ```
 
 
