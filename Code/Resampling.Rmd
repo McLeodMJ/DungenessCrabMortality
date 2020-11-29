@@ -47,6 +47,8 @@ Apr_Sept_CPUE <- Apr_Sept_CPUE[Apr_Sept_CPUE$Date != "2020-09-01", ] #save only 
 
 # Set up DF of Pre-Post Molt dates from 2014 & 2020 w/ unaccounted pots 
 ```{r}
+###Trying to reformat df so that it includes pots that crabs were not observed in even though the pots were deployed. Total number of pots deployed is different for each sample date. 
+
 # Aggregate across Date & Pot
 Sample_Dates <- aggregate(cbind(Year, Month, Total.pots, Total.crabs, Effort) ~ Date, data = Apr_Sept_CPUE, mean)
 Sample_Dates$Date <- as.factor(Sample_Dates$Date)
@@ -68,7 +70,6 @@ for(i in 1:nrow(Resample_CPUE)){
   Resample_CPUE[i, c(total.pots[i]+2) : length(Resample_CPUE)] <- NA
 }  
 
-  
   Resample_CPUE <- melt(Resample_CPUE) #back to long format
   Resample_CPUE <- na.omit(Resample_CPUE[, c(1,3,2)]) # reorganize
   colnames(Resample_CPUE)[colnames(Resample_CPUE) == "value"] <- "Crabs.per.Pot"
