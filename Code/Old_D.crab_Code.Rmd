@@ -1,0 +1,639 @@
+---
+title: "Old_D.crab_code"
+author: "Montana McLeod"
+date: "8/31/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+load("D.crab.Rdata")
+```
+
+
+
+# Resampling of Our calculation [INOut]
+```{r}
+# Function for molt surv. 
+surv.molt <- function(y){
+  
+#create pre and post df for each size class 
+Pre_molt_juv <- subset(Resample_InOut, Carapace.Width <= 139 & Month == "April" & Year == y) #juveniles moving into sub-adults
+    if(nrow(Pre_molt_juv) == 0){
+      Pre_molt_juv[1,5] <- 0
+    }
+
+# sub-adults have to be spilt into two b/c of calc
+Pre_molt_sub1 <- subset(Resample_InOut, Carapace.Width %in% c(140:149) & Month == "April"& Year == y)
+    if(nrow(Pre_molt_sub1) == 0){
+      Pre_molt_sub1[1,5] <- 0
+    }
+
+Pre_molt_sub2 <- subset(Resample_InOut, Carapace.Width %in% c(150:159) & Month == "April"& Year == y)
+    if(nrow(Pre_molt_sub2) == 0){
+      Pre_molt_sub2[1,5] <- 0
+    }
+Post_molt_sub <- subset(Resample_InOut, Carapace.Width %in% c(140:159) & Month == "September" & Year == y)
+    if(nrow(Post_molt_sub) == 0){
+      Post_molt_sub[1,5] <- 0
+    }
+
+#create totals for pre & post-molt to get prop. 
+Pre_total <-subset(Resample_InOut, Month == "April" & Year == y)
+Post_total <- subset(Resample_InOut,  Month == "September" & Year == y)
+
+
+molt.in = nrow(Pre_molt_juv) * mean(Pre_molt_juv$Molt.prob) 
+molt.out = (nrow(Pre_molt_sub1)* mean(Pre_molt_sub1$Molt.prob)) + (nrow(Pre_molt_sub2)* mean(Pre_molt_sub2$Molt.prob)) 
+ survived <- (nrow(Post_molt_sub) + molt.in - molt.out) / ((nrow(Pre_molt_sub1) + nrow(Pre_molt_sub2)))
+ return(survived)
+}
+
+
+# creates a new df to store the randomized data
+Resample_InOut <- Ap_Sept_Data[, 1:4]
+#Reorder by date
+  index <- with(Resample_InOut, order(Date)) #organizes by month then year
+  Resample_InOut <- Resample_InOut[index,]
+  Resample_InOut$Carapace.Width <- rep(NA, nrow(Resample_InOut))
+
+# running iterations to recieve an avg  
+Nat_Mort_InOut <- data.frame(Sample_Date = c("2014-09-17","2020-09-15"))
+dates <-as.data.frame(table(Ap_Sept_Data$Date)) #store total # of crabs per sample date to use in loop
+dates <- dates[,2]
+
+for(j in 1: tstep){
+  #Run randomizer
+    #Resample_InOut$Carapace.Width <- sample(Ap_Sept_Data$Carapace.Width, nrow(Ap_Sept_Data), replace= TRUE)
+    i=1 # starting point in column
+    for(d in dates){
+         Resample_InOut$Carapace.Width[i:(i+d-1)]  <- sample(Ap_Sept_Data$Carapace.Width[i:(i+d-1)], d , replace= T)
+         i= (i+d) #creates new starting pt
+         
+         #Need to limit the loop
+          if(i == 348){
+             break
+           }
+    }
+    
+    Resample_InOut$ Molt.prob <- rep(NA, nrow(Resample_InOut))
+  #estimating molt prob. based off of zhang's equation(figure 3)
+  for(i in 1:nrow(Resample_InOut)){
+    if(Resample_InOut$Carapace.Width[i] <= 150)
+    { Resample_InOut$Molt.prob[i] <- (-0.0014* Resample_InOut$Carapace.Width[i]) + 1.14 }
+  
+    if(Resample_InOut$Carapace.Width[i] > 150)
+    { Resample_InOut$Molt.prob[i] <- (-0.014* Resample_InOut$Carapace.Width[i]) + 2.71 }
+    
+    if(Resample_InOut$Carapace.Width[i] > 193)
+    { Resample_InOut$Molt.prob[i] <- 0 }
+  }
+
+  Est_Mort_InOut <- rbind(surv.molt(2014), surv.molt(2020)) 
+  Nat_Mort_InOut[,j+1] <- Est_Mort_InOut
+}
+
+# Calculate variance across Resampling iterations 
+Nat_Mort_InOut$Mean <- rep(NA, nrow(Nat_Mort_InOut))
+Nat_Mort_InOut$Variance <- rep(NA, nrow(Nat_Mort_InOut))
+for( j in 1:nrow(Nat_Mort_InOut)){
+  z <- unlist(Nat_Mort_InOut[j,2:(tstep+1)])
+  Nat_Mort_InOut$Mean[j] <- mean(na.omit(z))
+  Nat_Mort_InOut$Variance[j] <- var(na.omit(z))
+}
+Nat_Mort_InOut <- melt(Nat_Mort_InOut)
+###Nat_Mort_InOut <- subset(Nat_Mort_InOut, Sample_Date == "2014-09-17" |  Sample_Date == "2020-09-15")
+
+#Nat_Mort$Real_N.Mort <-Orig_N_mort # adds column of real values based on our data
+Avgs_InOut <- Nat_Mort_InOut[2001:2004,] 
+
+
+ggplot(Nat_Mort_InOut[c(1:2000),], aes(Sample_Date, value))+
+  geom_boxplot()+
+  labs(title= "Variance of Natural Mortality Rates in Sub-legal Males", x= "Date", y= "Daily Natural Mortality Rate")
+
+```
+
+
+
+# General bootstrapping
+```{r}
+## calculate beta distrivution parameters using MOM from week 2
+beta.mom<-function(mean,sd){
+  v<-sd**2
+  x<-mean
+  a<-x*(x*(1-x)/v-1)
+  b<-(1-x)*(x*(1-x)/v-1)
+  c(a,b)
+}
+## calculate beta parameters
+beta.prm<-beta.mom(molt.2014, 0.05)
+## generate harvest rates from beta distrubution
+sim.InOut<- rbeta(1000,beta.prm[1],beta.prm[2])
+
+mean(rand.2014)
+sd(rand.2014)
+quantile(rand.2014,c(.025,0.975))
+
+
+#Resampling for our calc.
+
+
+```
+
+
+
+
+# 2015 jan/ may CPUE check
+```{r}
+Jan_May_sub <- subset(Up_data_N, Year ==2015 & Sex ==1 & Carapace.Width %in% c(140:149) & Month == "January" | Month == "May", select = c(Date : Carapace.Width, Pot, Soak.Time.hr, Total.pots, Effort))
+
+Jan_May_CPUE<- Jan_May_sub %>% 
+  select(Date, Month, Year, Pot, Total.pots, Effort) %>% 
+  group_by(Date, Month, Year, Pot, Total.pots, Effort) %>% 
+  count(Pot)
+colnames(Jan_May_CPUE)[colnames( Jan_May_CPUE) == "n"]  <- "Crabs.per.Pot"
+Jan_May_CPUE <- as.data.frame(Jan_May_CPUE)
+
+#Reorder by date
+index <- with(Jan_May_CPUE, order(Date, Pot)) #organizes by month then year
+Jan_May_CPUE <- Jan_May_CPUE[index,]
+
+# run resampling throug 1000 iterations
+Nat_Mort <- data.frame(Sample_Date = as.character(unique(Jan_May_CPUE$Date)))
+Sim_CPUE <- Jan_May_CPUE # rename so dont overright original resample_cpue
+
+tstep = 1000
+for (j in 1:tstep){
+  #Randomization of crabs per pot
+  Sim_CPUE$Crabs.per.Pot  <- sample(Jan_May_CPUE$Crabs.per.Pot, nrow(Jan_May_CPUE), replace= TRUE)
+  
+  x <- aggregate(cbind(Total.pots, Effort) ~ Date + Month + Year, data = Sim_CPUE, max) #takes consistent values
+  y <- aggregate(Crabs.per.Pot ~ Date + Month + Year, data = Sim_CPUE, sum) #takes sum of crabs
+  Est_Mort_CPUE <- merge(x,y, all=TRUE) #averages by year
+  
+  # CPUE = # of crabs caught in a string of traps / standard effort
+  Est_Mort_CPUE$CPUE <- Est_Mort_CPUE$Crabs.per.Pot / Est_Mort_CPUE$Effort
+  
+  # Making a Julian date by the year 
+  Est_Mort_CPUE$J.date <- julian.Date(Est_Mort_CPUE$Date, as.Date("2014-01-01"), by= 'Year' )
+  for (i in 1:nrow(Est_Mort_CPUE)){
+    if(Est_Mort_CPUE$Year[i] != 2014) {
+      n = Est_Mort_CPUE$Year[i] - 2014;
+      Est_Mort_CPUE$J.date[i] <- Est_Mort_CPUE$J.date[i] - (365 * n) 
+    }
+  }
+  Est_Mort_CPUE$N.Mort <- rep(NA, nrow(Est_Mort_CPUE)) #NULL column
+  
+  
+  #estimating mortality for samples in same year but different months [zhang eqn]
+  for(i in 2:nrow(Est_Mort_CPUE)){
+    if(Est_Mort_CPUE$Year[i] == Est_Mort_CPUE$Year[i-1] & Est_Mort_CPUE$Month[i] !=   Est_Mort_CPUE$Month[i-1]) {
+      Est_Mort_CPUE$N.Mort[i] <- (-1/( (Est_Mort_CPUE$J.date[i]) - (Est_Mort_CPUE$J.date[i-1]) ) )* log(Est_Mort_CPUE$CPUE[i] / Est_Mort_CPUE$CPUE[i-1] )  }
+  }
+  
+  # store the natural mortalities for each iteration
+  Nat_Mort[,j+1]  <- Est_Mort_CPUE$N.Mort
+  
+}
+
+Nat_Mort <- Nat_Mort[2, ] #keeps only the estimates
+#Nat_Mort[,j] <- Nat_Mort[which(is.finite(Nat_Mort$value)),j] #removes any infinite values
+Nat_Mort <- do.call(data.frame,lapply(Nat_Mort, function(x) replace(x, is.infinite(x),NA)))
+
+# Calculate variance across Resampling iterations 
+Nat_Mort$Mean <- rep(NA, nrow(Nat_Mort))
+Nat_Mort$Variance <- rep(NA, nrow(Nat_Mort))
+for( j in 1:nrow(Nat_Mort)){
+  z <- unlist(Nat_Mort[j,2:(tstep+1)])
+  Nat_Mort$Mean[j] <- mean(na.omit(z))
+  Nat_Mort$Variance[j] <- var(na.omit(z))
+}
+Nat_Mort <- melt(Nat_Mort)
+
+#Nat_Mort$Real_N.Mort <-Orig_N_mort # adds column of real values based on our data
+CPUE_avgs <- Nat_Mort[1001:1002,] 
+CPUE_avgs[3:4,1] <- CPUE_avgs$Sample_Date[1:2]
+CPUE_avgs[,4] <- c( rep("daily", 2), rep("annual", 2))
+CPUE_avgs[3:4,2] <- CPUE_avgs$variable[1:2]
+CPUE_avgs[3:4,3] <- CPUE_avgs$value[1:2] * 365
+```
+
+
+# resampling the brutt force way
+```{r}
+
+  empty <- c(2, 1:2, 4:6, 9:10, 4, 11) # Pots that are missing from the df - a sub-adult was not observed/ collected in every pot that was deployed
+ ## Would like to do this a cleaner way 
+ 
+# Add rows for unaccounted sub-legal males from each pot of total pots
+     df <- data.frame(Date=rep(NA,length(empty)),
+                      Month= c(rep(4, 8), rep(9,2) ),
+                      Year= c(2014, rep(2020,(length(empty)-1))),
+                      Pot= empty, 
+                      Total.pots= rep(0,length(empty)), 
+                      Total.crabs= rep(0,length(empty)),
+                      Effort = rep(0,length(empty)),
+                      Crabs.per.Pot = rep(0,length(empty)))
+Resample_CPUE <- rbind(Resample_CPUE, df)
+
+#Me poorly reorganizing to account for 0 sub-legal crabs in the pots & placing them in order
+Resample_CPUE <- Resample_CPUE[c(1, 20, 2:5, 21:22, 6, 23:25, 7:8, 26:27, 9:13, 28, 14:19, 29), ]
+Resample_CPUE$Date[2] <- Resample_CPUE$Date[1]
+Resample_CPUE$Date[c(7:8,10:12,15:16)] <- Resample_CPUE$Date[9]
+Resample_CPUE$Date[22] <- Resample_CPUE$Date[21]
+Resample_CPUE$Date[29] <- Resample_CPUE$Date[28]
+
+```
+
+
+
+# Size-frequency Distribution data
+## Modifications for the final calculations [Zhang et al 2004]
+```{r}
+#ONLY sublegal males (9% of total crabs collected via pots)
+Sub_males <- subset(Pots_N, Sex== 1 & CW >= 140 & CW <= 159, select = Date : Total.pots)
+
+#assigns the total number of pots per string via sample date (NT) & total crabs per string
+Sub_males$Total.crabs <- rep(NA,nrow(Sub_males))
+#Sub_males$Total.pots[length(Sub_males$Total.pots)] <- Sub_males$Pot[length(Sub_males$Total.pots)] 
+
+#When there is a different sample date (i.e. sample), records total pots used and number of crabs collected 
+j=1
+for(i in 2:nrow(Sub_males)){
+  if(Sub_males$Date[i] !=  Sub_males$Date[i-1])
+  {Sub_males$Total.crabs[j:i] <- (i-j);
+  j=i}
+  
+  if(i == nrow(Sub_males)) 
+  {Sub_males$Total.crabs[j:i] <- i-j +1}
+}
+```
+
+
+# Calculating CPUE & Estimating Mortality for Sub-legal Males [Zhang et al 2004]
+```{r}
+#NULL ### CPT = 14.62 * (1 - exp(-0.19 * soak_time )) 
+#Sub_males$CPT <- 14.62 * (1 - exp(-0.19 * Sub_males$Soak.Time.hr ))
+
+#NULL ### STANDARD SOAK TIME = CPT(soak time by hour) / CPT(1 hour)
+#Sub_males$Sta_ST <- (1 - exp(-0.19 * Sub_males$Soak.Time.hr )) / (1 - exp(-0.19))
+
+#NULL ### STANDARD EFFORT = standard soak time * # of traps in a sample string
+#Sub_males$Sta_Effort <- Sub_males$Sta_ST * Sub_males$Total.pots
+
+# EFFORT: = soak time * # of traps in a sample string
+Sub_males$Effort <- Sub_males$Soak.Time.hr * Sub_males$Total.pots
+
+# CPUE = # of crabs caught in a string of traps / standard effort
+Sub_males$CPUE <- Sub_males$Total.crabs / Sub_males$Effort
+```
+
+
+# Probability of Molt  (Sub-Legal Males)
+```{r}
+# Before Molt
+t_1 = (31 + 28 + 31 +30 + 31 +1) # AKA June 1st in julian dates
+# After Molt
+t1 = (t_1 + 30 + 31 + 31 + 30 ) # AKA October 1st in julian 
+# Instantaneous Molt time 
+t0 = t_1 + ( (t1 - t_1)/2) #AKA August 1st
+
+# Equation for CPUE at t0
+CPUE.t0 <- rep(NA, nrow(avgs))
+for(i in 2:nrow(Est_Mort_sub)){
+  if(Est_Mort_sub$Year[i] == Est_Mort_sub$Year[i-1] & Est_Mort_sub$Month[i-1] >= 5 & Est_Mort_sub$Month[i] != Est_Mort_sub$Month[i-1] ) #added >= 5 because need it to be close to T-1 (June) so >= May
+    {CPUE.t0[i] <- Est_Mort_sub$CPUE[i-1] * exp( -1*Mean.Mort_sub * (t0 - t_1)) }
+}
+CPUE.t0 <- na.omit(CPUE.t0 )
+P.molt <- cbind(avgs, CPUE.t0)  #adds the CPUE.t0    
+
+
+#Equation for CPUE.old [old shell ind.]
+with (Est_Mort_sub, table(Year, Month)) #when last sample collected by year
+CPUE.old <- rep(NA, nrow(Est_Mort_sub))
+for(i in 2:nrow(Est_Mort_sub)){
+  if(Est_Mort_sub$Year[i] == Est_Mort_sub$Year[i-1] & Est_Mort_sub$Month[i] >= 9 & Est_Mort_sub$Month[i] != Est_Mort_sub$Month[i-1] ) #added >= 9 because need it to be close to T1 (October) so >= September
+    {CPUE.old[i] <- Est_Mort_sub$CPUE[i] * exp( -1*Mean.Mort_sub * (t0 - t1)) }
+}
+CPUE.old <- c(na.omit(CPUE.old ),0) #NOT enough old shell sample days 
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~REMOVE THE SECOND 0^^ WHEN 2020 GETS UPDATD~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+P.molt <- P.molt[c(1:2,4), ]#removes yeare 2015 because does NOT have sufficient end month (T1)
+P.molt <- cbind(P.molt , CPUE.old)  #adds the CPUE.t0    
+Prob.Molt_sub <- (P.molt$CPUE.t0 - P.molt$CPUE.old) / P.molt$CPUE.t0
+Prob.Molt_sub
+```
+
+
+## molt increments [Jamieson 1989]
+### range 80 ≤ MW ≤ 174 mm
+```{r}
+Up_data_N$Month.N <- as.numeric( format(Up_data_N$Date, format="%m") ) #month
+#Sub_males$Month.N <- as.numeric( format(Sub_males$Date, format="%m") ) #month
+
+max.molt = 4
+# molt expected around July - September
+Pre_molt_juv <- subset(Up_data_N, CW <= 139 & Month.N %in% c(1:max.molt) ) #juveniles moving into sub-adults
+Pre_molt_sub <- subset(Up_data_N, CW %in% c(140:160) & Month.N %in% c(1:max.molt))
+# error term 
+Pre_molt_leg <- subset(Up_data_N, CW >= 161 & Month.N %in% c(1:max.molt))
+Data_2020 <- subset(Up_data_N, CW >= 161 & Month.N %in% c(1:max.molt) & Year ==2020)
+
+sim<- NULL #creates empty lists to store the sim for both sub & juvs
+n= 1000
+molt_inc <- function(data, sex){
+  post_molt <- subset(data, Sex == sex, Date : Sex) #ability ot change sex in fxn
+  sim <- as.data.frame(post_molt$CW) # sets up data frame w/ initial CW
+for(i in 1:n){
+   e <- rnorm(1, mean= 0, sd= 3.29) #randomizing agent for vv 
+ 
+   #equation 9 from Zhang et al 2004 & Smith and Jamieson 1989 (BC)
+   ifelse(post_molt$Sex == 1,
+    sim[,i+1] <- (1.069* sim[1]) + 18.07 + e, 
+   ifelse(post_molt$Sex == 2,
+     sim[,i+1] <- (0.864* sim[1]) + 32.35 + e, NA))
+
+}
+  
+   for(j in 1:nrow(sim)){
+    x<- unlist(sim[j, c(2:(n+1))])
+    post_molt$POST.carapace[j] <- mean(x)
+    post_molt$SD[j] <- sqrt(var(x))
+
+  post_molt$diff <- post_molt$POST.carapace - post_molt$CW    
+ post_molt$perc <- post_molt$diff / post_molt$POST.carapace
+   }
+  return(post_molt)
+}
+
+post_molt_juv <- molt_inc(Pre_molt_juv, 1)
+post_molt_sub <- molt_inc(Pre_molt_sub, 1)
+post_molt_leg <- molt_inc(Pre_molt_leg, 1)
+post_2020 <- molt_inc(Data_2020, 1) #Use to show direct relationship for 2020 
+
+#H0_1 = diff sub-adults btw April and Sept = 0 (b/c juv cohort moves into  sub-adult cohort)
+  #HA_1 != 0
+#t.test(Carapace.Width ~ Month, model, var.equal = FALSE)
+#var.test(Carapace.Width~ Month, model)
+```
+
+
+
+# Probability of Molt Calculation (Legal Males)
+```{r}
+# Before Molt
+t_1 = (31 + 28 + 31 +30 + 31 +1) # AKA June 1st in julian dates
+# After Molt
+t1 = (t_1 + 30 + 31 + 31 + 30 ) # AKA October 1st in julian 
+# Instantaneous Molt time 
+t0 = t_1 + ( (t1 - t_1)/2) #AKA August 1st
+
+# Equation for CPUE at t0
+CPUE.t0 <- rep(NA, nrow(avgs))
+for(i in 2:nrow(Est_Mort_legal)){ 
+  if(Est_Mort_legal$Year[i] == Est_Mort_legal$Year[i-1] & Est_Mort_legal$Month[i-1] >= 5 & Est_Mort_legal$Month[i] != Est_Mort_legal$Month[i-1] ) #added >= 5 because need it to be close to T-1 (June) so >= May
+    {CPUE.t0[i] <- Est_Mort_legal$CPUE[i-1] * exp( -1*Mean.Mort_legal * (t0 - t_1)) }
+}
+CPUE.t0 <- na.omit(CPUE.t0 ) #2013,2014, 2015, 2020 left
+P.molt <- cbind(avgs, CPUE.t0)  #adds the CPUE.t0    
+ 
+#Equation for CPUE.old [old shell ind.]
+with (Est_Mort_legal, table(Year, Month)) #when last sample collected by year
+CPUE.old <- rep(NA, nrow(Est_Mort_legal))
+for(i in 2:nrow(Est_Mort_legal)){
+  if(Est_Mort_legal$Year[i] == Est_Mort_legal$Year[i-1] & Est_Mort_legal$Month[i] >= 9 & Est_Mort_legal$Month[i] != Est_Mort_legal$Month[i-1] ) #added >= 9 because need it to be close to T1 (October) so >= September
+    {CPUE.old[i] <- Est_Mort_legal$CPUE[i] * exp( -1*Mean.Mort_legal * (t0 - t1)) }
+}
+CPUE.old <- c(na.omit(CPUE.old ),0) #NOT enough old shell sample days - ONLY 2013, 2014 (until 2020 is updated)
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~REMOVE THE SECOND 0^^ WHEN 2020 GETS UPDATD~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+P.molt <- P.molt[c(1:2,4), ]#removes yeare 2015 because does NOT have sufficient end month (T1)
+P.molt <- cbind(P.molt , CPUE.old)  #adds the CPUE.t0    
+Prob.Molt_legal <- (P.molt$CPUE.t0 - P.molt$CPUE.old) / P.molt$CPUE.t0
+Prob.Molt_legal
+ 
+Mortality <- cbind(Prob.Molt_sub, Prob.Molt_legal)
+Mortality <- rbind(Mortality, cbind(Mean.Mort_sub, Mean.Mort_legal))
+rownames(Mortality) <- c("2013", "2014", "2020", "Mean.Mort")
+Mortality 
+```
+
+
+
+# DATA FROM MOUTH OF COL RIVER GORGE
+## Estimating mortality and prob of molt
+```{r}
+Sub_males_MCR <- subset(data_MCR, SEX== 1 & CW >= 140 & CW < 159, select = c(Date, Pot.., CW) )
+
+#Sets Months in Order
+Sub_males_MCR <- Sub_males_MCR %>% 
+  mutate(Month = factor(
+    month(Date, label = FALSE),   # thing you're converting
+    1:12,                                  # values it could take
+    labels =                               # how they should appear
+      c("January", "February", "March", "April",
+      "May", "June", "July", "August",
+      "September", "October", "November", "December"),
+    ordered = TRUE)) #Sets the Month to automatically order via month order [lubridate package]
+
+#Adds soak times (Email corespondance 8/20)
+Sub_males_MCR$Soak.Time.hr <- ifelse(Sub_males_MCR$Date == "2018-08-23", 23, 
+       ifelse(Sub_males_MCR$Date == "2018-08-30", 19,
+       ifelse(Sub_males_MCR$Date == "2018-09-18", 24,
+       ifelse(Sub_males_MCR$Date == "2018-09-28", 2.5,NA ) ) ) )
+#Sort the dataframe by Month for Plot
+index <- with(Sub_males_MCR, order(Date, Pot..)) #places the order
+Sub_males_MCR <- Sub_males_MCR[index,] #outputs the data in that order
+
+# Making a Julian date by the year 
+Sub_males_MCR$J.date <- julian.Date(Sub_males_MCR$Date, as.Date("2018-01-01"), by= 'Year' )
+
+
+#Prep the dataframe
+Sub_males_MCR$Total.pots <- rep(NA,nrow(Sub_males_MCR))
+Sub_males_MCR$Total.crabs <- rep(NA,nrow(Sub_males_MCR))
+Sub_males_MCR$Total.pots[length(Sub_males_MCR$Total.pots)] <- Sub_males_MCR$Pot[length(Sub_males_MCR$Total.pots)] 
+
+#When there is a different sample date (i.e. sample), records total pots used and number of crabs collected 
+j=1
+for(i in 2:nrow(Sub_males_MCR)){
+  if(Sub_males_MCR$Date[i] !=  Sub_males_MCR$Date[i-1])
+  { Sub_males_MCR$Total.pots[j:i] <- Sub_males_MCR$Pot[i-1];
+    Sub_males_MCR$Total.crabs[j:i] <- (i-j);
+  j=i}
+  
+  if(i == nrow(Sub_males_MCR)) 
+  {Sub_males_MCR$Total.pots[j:i] <- Sub_males_MCR$Pot[i];
+  Sub_males_MCR$Total.crabs[j:i] <- i-j +1}
+}
+Sub_males_MCR <- Sub_males_MCR[ ,c(1,4,6,5,3,2,7,8)]
+
+
+# EFFORT: = soak time * # of traps in a sample string
+Sub_males_MCR$Effort <- Sub_males_MCR$Soak.Time.hr * Sub_males_MCR$Total.pots
+
+# CPUE = # of crabs caught in a string of traps / standard effort
+Sub_males_MCR$CPUE <- Sub_males_MCR$Total.crabs / Sub_males_MCR$Effort
+
+
+#MORTALITY ESTIMATE
+Mort_sub_MCR <- aggregate(cbind(J.date, Soak.Time.hr, Total.pots, Effort, CPUE) ~ Date, data = Sub_males_MCR, mean) #reports just the individual date and the CPUE
+Mort_sub_MCR$Month <- as.numeric( format(Mort_sub_MCR$Date, format="%m") ) #month
+Mort_sub_MCR <- Mort_sub_MCR[ , c(1,7,2:6)]
+
+#estimating mortality for samples in same year but different months
+Mort_sub_MCR$N.Mort <- rep(NA, nrow(Mort_sub_MCR)) #NULL column
+Mort_sub_MCR$N.Mort[3] <- (-1/( (Mort_sub_MCR$J.date[3]) - (Mort_sub_MCR$J.date[1]) ) )* log(Mort_sub_MCR$CPUE[3] / Mort_sub_MCR$CPUE[1] )  ## USED the 3rd value because low effort due to short soak time in last sample
+Mort_sub_MCR
+
+
+#estimating mort prob. based off of zhang's equation(figure 3)
+for(i in 1:nrow(Sub_males_MCR)){
+  if(Sub_males_MCR$Carapace.Width[i] <= 150)
+  { Sub_males_MCR$Molt.prob[i] <- (-0.0014* Sub_males_MCR$Carapace.Width[i]) + 1.14 }
+
+  if(Sub_males_MCR$Carapace.Width[i] > 150)
+  { Sub_males_MCR$Molt.prob[i] <- (-0.014* Sub_males_MCR$Carapace.Width[i]) + 2.71 }
+}
+
+ggplot(Sub_males_MCR, aes(x=CW, y= Molt.prob)) +
+     geom_point(aes(color = CW)) +
+      scale_color_viridis(option = "D")+
+    labs(title= "Size-specific molting probabilities - MCR")
+
+```
+
+
+# Comparing proportions of legal to Sub-legal males 
+```{r}
+x <- as.data.frame(as.table(with(Up_data_N, table(Sex, Date)) )) #legal males & females
+     males <- subset(x, Sex == 1, Date:Freq)  
+y <-  as.data.frame(as.table(with(Sub_males, table(Sex, Date)) ))#sub-legal males 
+
+ males <- merge(males, y, by = "Date", all= TRUE)
+males <- males[ ,c(1,2,4)] 
+ colnames(males) <- c("Date", "Freq.Total", "Freq.sub")
+ males$Prop <- males$Freq.sub / males$Freq.Total
+ males
+ # summary(males$Prop) #average proportion of sub-legal males from total males is 22%
+```
+
+
+
+
+
+
+# CHECK RAREFACTION FILE AND IF WORKING THEN REMOVE 
+# rarefaction of six pots [EXAMPLE of how I was running it before function]
+```{r}
+sub_sample_6 <- subset(crabs.per.pot, Pot == xyz[[6]][1] | Pot == xyz[[6]][2] | Pot == xyz[[6]][3] |  Pot == xyz[[6]][4] | Pot == xyz[[6]][5] | Pot == xyz[[6]][6])
+
+# Making a Julian date by the year 
+sub_sample_6$J.date <- julian.Date(sub_sample_6$Date, as.Date("2020-01-01"), by= 'Year' )
+
+#When there is a different sample date (i.e. sample), records total pots used and number of crabs collected 
+sub_sample_6$Total.crabs <- rep(NA,nrow(sub_sample_6))
+j=1
+for(i in 2:nrow(sub_sample_6)){
+  if(sub_sample_6$Date[i] !=  sub_sample_6$Date[i-1])
+  { sub_sample_6$Total.crabs[j:i] <- (i-j);
+  j=i}
+
+  if(i == nrow(sub_sample_6)) {
+    sub_sample_6$Total.crabs[j:i] <- i-j +1
+  } }
+sub_sample_6$Total.pots <- rep(6, nrow(sub_sample_6))
+
+# EFFORT: = soak time * # of traps in a sample string
+sub_sample_6$Effort <- sub_sample_6$Soak.Time.hr * sub_sample_6$Total.pots
+
+# CPUE = # of crabs caught in a string of traps / standard effort
+sub_sample_6$CPUE <- sub_sample_6$Total.crabs / sub_sample_6$Effort
+
+#MORTALITY ESTIMATE
+Est_sample_6<- aggregate(cbind(J.date, Soak.Time.hr, Total.pots,Total.crabs, Effort, CPUE) ~ Date, data = sub_sample_6, mean) #reports just the individual date and the CPUE
+Est_sample_6$Month <- as.numeric( format(Est_sample_6$Date, format="%m") ) #month
+
+
+#estimating mortality for samples in same year but different months
+Est_sample_6$N.Mort <- rep(NA, nrow(Est_sample_6)) #NULL column
+for(i in 2: length(Est_sample_6)){
+  Est_sample_6$N.Mort[i] <- (-1/( (Est_sample_6$J.date[i]) - (Est_sample_6$J.date[i-1]) ) )*log(Est_sample_6$CPUE[i] / Est_sample_6$CPUE[i-1] )  ## USED the 3rd value because low effort due to short soak time in last sample
+}
+Est_sample_6
+```
+
+
+# Rarefaction of Sub-adult Males
+```{r}
+# ONE pot used
+Est_1 <- rarefaction(crabs.per.pot.sub.males, 1, xyz[[1]])
+
+for(i in 2: nrow(Est_1)){
+  Est_1$N.Mort[i] <- (-1/( (Est_1$J.date[i]) - (Est_1$J.date[i-1]) ) )*log(Est_1$CPUE[i] / Est_1$CPUE[i-1] )  ## USED the 3rd value because low effort due to short soak time in last sample
+  }
+
+
+# TWO pots used
+Est_2 <- rarefaction(crabs.per.pot.sub.males, 2, xyz[[2]])
+
+for(i in 2: nrow(Est_2)){
+  Est_2$N.Mort[i] <- (-1/( (Est_2$J.date[i]) - (Est_2$J.date[i-1]) ) )*log(Est_2$CPUE[i] / Est_2$CPUE[i-1] )  ## USED the 3rd value because low effort due to short soak time in last sample
+  }
+
+
+
+# THREE pots used
+Est_3 <- rarefaction(crabs.per.pot.sub.males, 3, xyz[[3]])
+
+for(i in 2: nrow(Est_3)){
+  Est_3$N.Mort[i] <- (-1/( (Est_3$J.date[i]) - (Est_3$J.date[i-1]) ) )*log(Est_3$CPUE[i] / Est_3$CPUE[i-1] )  ## USED the 3rd value because low effort due to short soak time in last sample
+}
+
+
+# FOUR pots used
+Est_4 <- rarefaction(crabs.per.pot.sub.males, 4, xyz[[4]])
+
+for(i in 2: nrow(Est_4)){
+  Est_4$N.Mort[i] <- (-1/( (Est_4$J.date[i]) - (Est_4$J.date[i-1]) ) )*log(Est_4$CPUE[i] / Est_4$CPUE[i-1] )  ## USED the 3rd value because low effort due to short soak time in last sample
+}
+
+
+# FIVE pots used
+Est_5 <- rarefaction(crabs.per.pot.sub.males, 5, xyz[[5]])
+
+for(i in 2: nrow(Est_5)){
+  Est_5$N.Mort[i] <- (-1/( (Est_5$J.date[i]) - (Est_5$J.date[i-1]) ) )*log(Est_5$CPUE[i] / Est_5$CPUE[i-1] )  ## USED the 3rd value because low effort due to short soak time in last sample
+}
+
+
+# SIX pots used
+Est_6 <- rarefaction(crabs.per.pot.sub.males, 6, xyz[[6]])
+
+for(i in 2: nrow(Est_6)){
+  Est_6$N.Mort[i] <- (-1/( (Est_6$J.date[i]) - (Est_6$J.date[i-1]) ) )*log(Est_6$CPUE[i] / Est_6$CPUE[i-1] )  ## USED the 3rd value because low effort due to short soak time in last sample
+}
+
+# SET UP DATAFRAME OF RESULTS
+Plot2 <- data.frame(Pots = c(1:6), n.Mort = NA)
+  Plot2$n.Mort[1] <- Est_1$N.Mort[nrow(Est_1)]
+    #Est_sample_1$N.Mort[nrow(Est_sample_1)] #grabs the last natural mort. rate btw june-july 2020
+  Plot2$n.Mort[2] <- Est_2$N.Mort[nrow(Est_2)]
+  Plot2$n.Mort[3] <- Est_3$N.Mort[nrow(Est_3)]
+  Plot2$n.Mort[4] <- Est_4$N.Mort[nrow(Est_4)]
+  Plot2$n.Mort[5] <- Est_5$N.Mort[nrow(Est_5)]
+  Plot2$n.Mort[6] <- Est_6$N.Mort[nrow(Est_6)]
+  #Plot$Avg.N.Mort <- rep(0.01189,6) # sub adults
+
+
+ ggplot(Plot2, aes(x=Pots, y=n.Mort))+
+    geom_smooth(method = lm, se = T)+
+    geom_point()+
+    geom_hline(yintercept=0.01189, color= 'red', linetype="dashed")+ #sub adult males
+    #geom_hline(yintercept=0.023, color= 'red', linetype="dashed")+ #adults
+    guides(color="legend")+
+    ggtitle("Rarefaction of Sub-adult Males") 
+
+```
