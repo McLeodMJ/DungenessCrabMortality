@@ -80,7 +80,7 @@ for(i in 1:nrow(Resample_CPUE)){
 
 Resample_CPUE <-merge(Resample_CPUE, Sample_Dates, by="Date", all=TRUE)
 Resample_CPUE <- Resample_CPUE[, c(1,4,5,2,3,6:8)]
-
+ 
 ```
 
 
