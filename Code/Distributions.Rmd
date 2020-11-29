@@ -47,7 +47,6 @@ trawl <- ggplot(Trawl, aes(Month, CW))+ geom_boxplot(fill = "green")
  
 #shows potential outliers by month
 pot <- ggplot(Pots_N, aes(Month, CW))+ geom_boxplot(fill = "blue")
- 
 trawl + pot
 ```
 

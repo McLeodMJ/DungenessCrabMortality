@@ -10,7 +10,7 @@
 #########################################################################################################
 
 # Function for proportion of pop that molts from April --> September
-surv.molt <- function(data, y){
+surv.molt <- function(data, y, a){
   Ap_Sept_Data <- subset(data, Date == "2014-04-07" | Date == "2014-09-17"| Date == "2020-04-03" |Date == "2020-09-01" |Date == "2020-09-15")
   
   #create pre and post df for each size class 
@@ -24,7 +24,7 @@ surv.molt <- function(data, y){
   
   molt.in = nrow(Pre_molt_juv) * mean(Pre_molt_juv$Molt.prob) 
   molt.out = (nrow(Pre_molt_sub1) * mean(Pre_molt_sub1$Molt.prob)) + (nrow(Pre_molt_sub2)* mean(Pre_molt_sub2$Molt.prob)) 
-  survived <- (nrow(Post_molt_sub) + molt.in - molt.out) / (nrow(Pre_molt_sub1) + nrow(Pre_molt_sub2)) # N(1)/N(0)
+  survived <- (((nrow(Post_molt_sub) + molt.in - molt.out) * mean(Post_molt_sub$Effort))  / ((nrow(Pre_molt_sub1) + nrow(Pre_molt_sub2)) * mean(Pre_molt_sub1$Effort))/a)  # N(1)/N(0)
   return(survived)
 }
 

@@ -7,15 +7,15 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-setwd("~/Documents/THESIS/Dungeness_crab/Code")
+setwd("~/Documents/THESIS/Dungeness_crab/DungenessCrabMortality/Code")
 ```
 
 
 # Heppell datasets & distributions 
 ```{r}
-SH_catch_data <- read.csv("./Data/Heppell_Marine_Team_Data_Catch.csv", stringsAsFactors = FALSE)
+SH_catch_data <- read.csv("../Data/Estuary_Catch.csv", stringsAsFactors = FALSE)
   SH_catch_data <- subset(SH_catch_data, Common.Name == "Dungeness Crab", select = ID : Sex)
-SH_abiotic_data <- read.csv("./Data/Heppell_Marine_Team_Data.csv", stringsAsFactors = FALSE)
+SH_abiotic_data <- read.csv("../Data/Estuary_Data.csv", stringsAsFactors = FALSE)
   SH_abiotic_data <- SH_abiotic_data[ , c(1:11)] #extracts values that we need 
  
 #Merge the abiotic with catch data  
