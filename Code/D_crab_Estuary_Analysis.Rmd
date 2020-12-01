@@ -1,0 +1,51 @@
+---
+title: "D_crab_Heppell_data"
+author: "Montana McLeod"
+date: "8/18/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/Documents/THESIS/Dungeness_crab/DungenessCrabMortality/Code")
+```
+
+
+# Heppell datasets & distributions 
+```{r}
+SH_catch_data <- read.csv("../Data/Estuary_Catch.csv", stringsAsFactors = FALSE)
+  SH_catch_data <- subset(SH_catch_data, Common.Name == "Dungeness Crab", select = ID : Sex)
+SH_abiotic_data <- read.csv("../Data/Estuary_Data.csv", stringsAsFactors = FALSE)
+  SH_abiotic_data <- SH_abiotic_data[ , c(1:11)] #extracts values that we need 
+ 
+#Merge the abiotic with catch data  
+SH_data <- merge(SH_catch_data, SH_abiotic_data, by= c("ID", "Month", "Day", "Year", "Site"), all= TRUE)
+ 
+#merge created num as factors
+SH_data$Day <- as.numeric(as.character(SH_data$Day))  
+SH_data$Year <- as.numeric(as.character(SH_data$Year))
+SH_data$Length.mm <- as.numeric(SH_data$Length.mm)
+
+ #removes the anomaly for better viewing 
+SH_data <- subset(SH_data, Sex == "M" & Length.mm != 880, select = ID : Sex) #only males 
+
+#SH_data$Bottom.DO.mg.l.st <- SH_data$Bottom.DO.mg.l.st * 0.001 #CANT DO BECAUSE DOES NOT ADD UP..
+ 
+# Plot size-frequency by Month
+ggplot(SH_data, aes(x=Length.mm, fill=Month))+
+    geom_histogram(binwidth= 12)+ 
+    facet_wrap(~Month) 
+
+#monthly crapace widths
+ggplot(SH_data, aes(Month, Length.mm))+ geom_boxplot(fill = "blue")
+ 
+
+#setting up only males btw may-June 2004
+SH_data_MJ <- subset(SH_data, Month == c("May", "June"), select = ID : Sex) 
+  SH_data_MJ <- subset(SH_data_MJ, Sex == "M", select = ID : Sex)
+  SH_data_MJ <- subset(SH_data_MJ, Year == 2004, select = ID : Sex) 
+ 
+#Size-Distriubtion of males btw may-June 2004
+ ggplot(SH_data_MJ, aes(x=Length.mm, fill= Month)) +
+   geom_histogram(binwidth = 5)
+```
