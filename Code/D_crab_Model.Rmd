@@ -1,0 +1,229 @@
+---
+title: "D_crab_Model"
+author: "Montana McLeod"
+date: "7/2/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/Documents/THESIS/Dungeness_crab/DungenessCrabMortality/Code")
+```
+factor in who molted into size class and out of it
+ch 3 of book (discrete or cont?) Figure 3.2
+numer time t2/time 1 * prop. that are leaving the 
+
+
+```{r warnings=FALSE}
+library(ggplot2)
+library(Sleuth3)
+library(multcomp)
+library('patchwork')
+library('RColorBrewer')
+library(viridis)
+library(dplyr)
+library(lubridate)
+library(wesanderson)
+suppressPackageStartupMessages("Done")
+```
+
+
+# Estimating Natural Mortality (Sub-Legal Males)
+```{r}
+Est_Mort_sub <- aggregate(cbind(Soak.Time.hr, Total.pots, Effort, CPUE) ~ Date, data = Sub_males, mean) #reports just the individual date and the CPUE
+Est_Mort_sub$Year <- as.numeric( format(Est_Mort_sub$Date, format="%Y") ) # the full year
+Est_Mort_sub$Month <- as.numeric( format(Est_Mort_sub$Date, format="%m") ) #month
+
+# Making a Julian date by the year 
+Est_Mort_sub$J.date <- julian.Date(Est_Mort_sub$Date, as.Date("2013-01-01"), by= 'Year' )
+  for (i in 1:nrow(Est_Mort_sub)){
+     if(Est_Mort_sub$Year[i] != 2013) {
+       n = Est_Mort_sub$Year[i] - 2013;
+       Est_Mort_sub$J.date[i] <- Est_Mort_sub$J.date[i] - (365 * n) 
+     }
+  }
+
+Est_Mort_sub <- Est_Mort_sub[, c(1,6:8,2:5)] #reorganize df
+Est_Mort_sub_PreMolt <- Est_Mort_sub[c(3,5,13,18), ] # reports just the values that can be looked at pre-molt 
+Est_Mort_sub$N.Mort <- rep(NA, nrow(Est_Mort_sub)) #NULL column
+
+#estimating mortality for samples in same year but different months
+  Est_mort <- function(data){
+  for(i in 2:nrow(data)){
+    if(data$Year[i] == data$Year[i-1] & data$Month[i] != data$Month[i-1])
+    { data$N.Mort[i] <- (-1/( (data$J.date[i]) - (data$J.date[i-1]) ) )* log(data$CPUE[i] / data$CPUE[i-1] )  }
+  }
+  return(data)
+  }
+  
+Est_Mort_sub <- Est_mort(Est_Mort_sub)
+Est_Mort_sub_PreMolt <- Est_mort(Est_Mort_sub_PreMolt) #just Ap_Sept
+
+#Use in Resampling
+Orig_N_mort <- na.omit(Est_Mort_sub_PreMolt$N.Mort)
+
+
+
+# Estimating mean natural mortality 
+yr.n.mort <- aggregate(N.Mort ~ Year, data = Est_Mort_sub, mean) #takes mean daily mort.
+effort <- aggregate(Effort ~ Year, data = Est_Mort_sub, min) #takes min effort
+avgs <- na.omit(merge(yr.n.mort, effort, all=TRUE)) #averages by year
+Mean.Mort_sub <- sum(avgs$N.Mort * avgs$Effort) / sum(avgs$Effort) 
+Mean.Mort_sub
+
+# Estimating Standard error of mean natural mortality 
+n= 4 #number of years where data was used
+f <- n*avgs$Effort / sum(avgs$Effort) #needed for SE
+SE <- sqrt( sum(f *(avgs$N.Mort - Mean.Mort_sub)^2) / n*(n-1) )
+
+#prepare for the Resampling
+save(list= c("data_N", "NEW_data", "Total_data_N", "Up_data_N", "Sub_males", "Est_Mort_sub", "Orig_N_mort") ,file= "D.crab.Rdata")
+```
+
+
+# Creating plots of the expected proportion compared to REAL data
+```{r}
+April_Mjuv <- subset(Pots_N, Month.N %in% c(1:4) & CW < 140 & Sex ==1)
+April_Msub <- subset(Pots_N, Month.N %in% c(1:4) & CW %in% c(140:159) & Sex ==1)
+April_Mleg <- subset(Pots_N, Month.N %in% c(1:4) & CW > 159 &  Sex ==1)
+Sept_Mjuv <- subset(Pots_N, Month.N  == 9 & CW < 140 & Sex ==1)
+Sept_Msub <- subset(Pots_N, Month.N  == 9 & CW %in% c(140:159) & Sex ==1)
+Sept_Mleg <- subset(Pots_N, Month.N == 9 & CW > 159 & Sex ==1)
+col <- wes_palette("FantasticFox1",n= 3, type="discrete")
+
+April_leg_2020 <- subset(Pots_N, Month.N %in% c(1:4) & CW > 159 &  Sex ==1 & Year==2020)
+
+Sept_leg_2020 <- subset(Pots_N, Month.N == 9 & CW > 159 & Sex ==1 & Year==2020)
+ 
+
+graph_molt <- function(A, S, est){
+model <- data.frame(Month = c(rep("April", nrow(A)), rep("September", nrow(S))),
+                  CW = c(A$CW, S$CW))
+
+est_model <- data.frame(Month = rep(NA, nrow(est)),
+                   CW = est$POST.carapace,
+                   expect = rep("Estimate", nrow(est)))
+
+model$expect <- c(rep("April", nrow(A)), rep("September", nrow(S)) )
+model <- rbind(model, est_model)
+
+return(model)
+}
+model_juv <- graph_molt(April_Mjuv, Sept_Msub, post_molt_juv)
+model_sub <- graph_molt(April_Msub, Sept_Mleg, post_molt_sub)
+model_leg <- graph_molt(April_Mleg, Sept_Mleg, post_molt_leg)
+model_2020 <- graph_molt(April_leg_2020, Sept_leg_2020, post_2020)
+
+
+juv <- ggplot(data = model_juv, mapping = aes(x = CW, fill= expect)) +
+    geom_density(alpha = 0.5 )+
+    scale_fill_manual(values = col)+
+    #geom_vline(xintercept=130, color="orange", alpha= 0.5)+ #mean CW for pre-molt juv males
+    labs(title="Juvenile Males")+
+  theme_classic()
+
+sub <- ggplot(data = model_sub, mapping = aes(x = CW, fill= expect)) +
+    geom_density(alpha = 0.5 )+
+    scale_fill_manual(values = col)+
+    labs(title="Sub-adult Males")+
+  theme_classic()
+  
+leg <- ggplot(data = model_2020, mapping = aes(x = CW, fill= expect)) +
+    geom_density(alpha = 0.5 )+
+    scale_fill_manual(values = col)+
+    labs(title="Legal adult Males")+
+  theme_classic()
+ 
+juv + sub + leg 
+```
+
+
+# New calc for est. molt mort for male sub-adults
+```{r}
+# probabilites of molt based on averages from zhang linear reg. (chunk 15)
+Juv.Prob = 0.95 
+Sub.Prob.140 = 0.9
+Sub.Prob.150 = 0.5 
+
+Juv.no = nrow(post_molt_juv) #no. of juv
+# Different prob. molt for 140-150 and 150-160 sub-adult males 
+sub.no.140 = nrow(subset(April_Msub, CW < 150))
+sub.no.150 = nrow(subset(April_Msub, CW >= 150))
+
+molt.in <- Juv.no * Juv.Prob
+molt.out <- (sub.no.140 * Sub.Prob.140) + (sub.no.150 * Sub.Prob.150)
+
+ratio <- (nrow(Sept_Msub) + molt.in - molt.out) / nrow(April_Msub)
+ratio
+```
+
+
+#Data to send 
+```{r}
+# Only BOTH April & September for the years 2014 & 2020
+
+Ap_Sept_Data <- subset(data_N_Males, Date == "2014-04-07" | Date == "2014-09-17"| Date == "2020-04-03" |Date == "2020-09-01" |Date == "2020-09-15", c(Date, Month, Year, CW, Molt.prob)) 
+Apr_Sept_Sub <- subset(Sub_males, Date == "2014-04-07" | Date == "2014-09-17"| Date == "2020-04-03" |Date == "2020-09-01" |Date == "2020-09-15", Date :CPUE) 
+save(list= c("Ap_Sept_Data", "Apr_Sept_Sub", "Est_Mort_sub") ,file= "Molt_Males.Rdata")
+```
+
+
+# Function for proportion of pop that molts from April --> September
+```{r}
+load("Molt_Males.Rdata") #remove /.Data/
+
+surv.molt <- function(y){
+  
+#create pre and post df for each size class 
+Pre_molt_juv <- subset(Ap_Sept_Data, CW <= 139 & Month == "April" & Year == y) #juveniles moving into sub-adults
+
+# sub-adults have to be spilt into two b/c of calc
+Pre_molt_sub1 <- subset(Ap_Sept_Data, CW %in% c(140:149) & Month == "April"& Year == y)
+Pre_molt_sub2 <- subset(Ap_Sept_Data, CW %in% c(150:159) & Month == "April"& Year == y)
+
+Post_molt_sub <- subset(Ap_Sept_Data, CW %in% c(140:159) & Month == "September" & Year == y)
+
+#create totals for pre & post-molt to get prop. 
+Pre_total <-subset(Ap_Sept_Data, Month == "April" & Year == y)
+Post_total <- subset(Ap_Sept_Data,  Month == "September" & Year == y)
+
+
+molt.in = nrow(Pre_molt_juv) * mean(Pre_molt_juv$Molt.prob) 
+molt.out = (nrow(Pre_molt_sub1)* mean(Pre_molt_sub1$Molt.prob)) + (nrow(Pre_molt_sub2)* mean(Pre_molt_sub2$Molt.prob)) 
+ survived <- (nrow(Post_molt_sub) + molt.in - molt.out) / ((nrow(Pre_molt_sub1) + nrow(Pre_molt_sub2)))
+ return(survived)
+}
+molt.2014 <- surv.molt(2014)
+molt.2020 <- surv.molt(2020)
+```
+
+
+# Function for proportion of pop that molts from April --> September [/TOTAL]
+```{r}
+load("Molt_Males.Rdata") #remove /.Data/
+
+surv.molt <- function(y){
+  
+#create pre and post df for each size class 
+Pre_molt_juv <- subset(Ap_Sept_Data, CW <= 139 & Month == "April" & Year == y) #juveniles moving into sub-adults
+
+# sub-adults have to be spilt into two b/c of calc
+Pre_molt_sub1 <- subset(Ap_Sept_Data, CW %in% c(140:149) & Month == "April"& Year == y)
+Pre_molt_sub2 <- subset(Ap_Sept_Data, CW %in% c(150:159) & Month == "April"& Year == y)
+
+Post_molt_sub <- subset(Ap_Sept_Data, CW %in% c(140:159) & Month == "September" & Year == y)
+
+#create totals for pre & post-molt to get prop. 
+Pre_total <-subset(Ap_Sept_Data, Month == "April" & Year == y)
+Post_total <- subset(Ap_Sept_Data,  Month == "September" & Year == y)
+
+
+molt.in = nrow(Pre_molt_juv) * mean(Pre_molt_juv$Molt.prob) / nrow(Pre_total)
+molt.out = (nrow(Pre_molt_sub1)* mean(Pre_molt_sub1$Molt.prob)) + (nrow(Pre_molt_sub2)* mean(Pre_molt_sub2$Molt.prob)) / nrow(Pre_total)
+ survived <- survived <- ((nrow(Post_molt_sub) + molt.in - molt.out) /nrow(Post_total)) / ((nrow(Pre_molt_sub1) + nrow(Pre_molt_sub2))/ nrow(Pre_total))
+ return(survived)
+}
+molt.2014 <- surv.molt(2014)
+molt.2020 <- surv.molt(2020)
+```
+
