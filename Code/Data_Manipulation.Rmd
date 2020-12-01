@@ -1,0 +1,139 @@
+---
+title: "Data_Manipulation_D.crab"
+author: "Montana McLeod"
+date: "10/7/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/Documents/THESIS/Dungeness_crab/DungenessCrabMortality/Code")
+
+```
+
+# Libraries 
+```{r}
+library(dplyr)
+library(lubridate)
+library(multcomp)
+```
+
+
+# Henkel Data from 2013-2019
+```{r echo=FALSE}
+#Newport Data
+data_N <- read.csv("../Data/Crabbing_data_N.csv" , stringsAsFactors = FALSE) # ./ pulls from Data folder 
+data_N$Date <- as.Date( as.character(data_N$Date), format="%m/%d/%y")
+# Redefining Months
+data_N <- data_N %>% 
+  mutate(Month = factor(
+    month(Date, label = FALSE),   # thing you're converting
+    1:12,                                  # values it could take
+    labels =                               # how they should appear
+      c("January", "February", "March", "April",
+      "May", "June", "July", "August",
+      "September", "October", "November", "December"),
+    ordered = TRUE)) #Sets the Month to automatically order via month order [lubridate package]
+data_N$Year <- as.numeric( format(data_N$Date, format="%Y") )
+```
+
+
+
+
+# Eder grant Data from 2020
+## Data collected in 2020 (thru Sept 2020)
+```{r}
+NEW_data<-read.csv("../Data/CrabSizes2020.csv" , stringsAsFactors = FALSE)
+colnames(NEW_data)<- c("Date","Vessel", "Pot..","Lat","Long","Depth", "Box", "BAIT","SEX","Carapace.Width","Shell.Cond","Comments", "LL1", "LL2","LL3") #rename to match previous DF for the Merge
+
+#Fix lat errors
+NEW_data$Comments <- ifelse(NEW_data$Lat == "Missing!", "Missing!", NEW_data$Comments)
+NEW_data$Lat <- ifelse(NEW_data$Lat == "44.36.??", "44.36", 
+                       ifelse(NEW_data$Lat == "" | NEW_data$Lat == "Missing!", NA, NEW_data$Lat) )
+
+#Fix long errors
+NEW_data$Long <- ifelse(NEW_data$Long == "-124.06.??", "-124.06", 
+                        ifelse(NEW_data$Long == "", NA, NEW_data$Long) )
+
+#ADD & Fix dates
+NEW_data$Date <- as.Date(NEW_data$Date, format="%m/%d/%y")
+NEW_data <- NEW_data %>% 
+  mutate(Month = factor(
+    month(Date, label = FALSE),   # thing you're converting
+    1:12,                                  # values it could take
+    labels =                               # how they should appear
+      c("January", "February", "March", "April",
+      "May", "June", "July", "August",
+      "September", "October", "November", "December"),
+    ordered = TRUE)) 
+NEW_data$Year <- as.numeric( format(NEW_data$Date, format="%Y") )
+
+#Fix carapace width errors
+NEW_data$Carapace.Width <- as.numeric(ifelse(NEW_data$Carapace.Width == "?" | NEW_data$Carapace.Width == "", NA, NEW_data$Carapace.Width) ) 
+``` 
+
+
+# Final dataset/ Merge
+```{r}
+#merge the old with the new DF
+Total_data_N <- merge(NEW_data, data_N, by=c("Date", "Month","Year","Carapace.Width", "Depth", "BAIT", "SEX","Pot.."), all=TRUE)
+colnames(Total_data_N) <- c("Date","Month","Year","CW", "Depth", "Bait", "Sex","Pot", "Vessel", "Lat", "Long", "Box","Shell.Cond", "Comments","LL1", "LL2","LL3", "Line", "Contour")
+ 
+#trawl df
+Trawl <- subset(Total_data_N, Pot =="Trawl" | Pot == " Trawl")
+
+#Removing Columns not interested in
+Pots_N <- Total_data_N[ , c(1:4,7:8)]
+
+#Removing trawls (Approx. 20% of the dataset)
+Pots_N$Pot<- ifelse(Pots_N$Pot == "Trawl" | Pots_N$Pot == " Trawl", NA, Pots_N$Pot)   #makes Trawls NAs so it is easier to remove
+Pots_N <- Pots_N[ complete.cases(Pots_N$Pot), ] # removes the NAs that are in the Pot column 
+Pots_N$Pot <- as.numeric(Pots_N$Pot)
+Pots_N$Sex <- as.numeric(Pots_N$Sex)
+
+#Sort the dataframe by Month for Plot
+index<- with(Pots_N, order(Year, Month, Date, Pot)) #places the order
+Pots_N<- Pots_N[index,] #outputs the data in that order
+
+
+#sets soaktime (emailed response from Sarah 7/13 & 8/20)
+Pots_N$Soak.Time.hr <- ifelse(Pots_N$Date == "2013-12-07", 48, 
+       ifelse(Pots_N$Date == "2018-06-04", 72,
+       ifelse(Pots_N$Date == "2018-06-06", 48,
+       ifelse(Pots_N$Date == "2018-06-08", 48, 
+       ifelse(Pots_N$Date == "2020-06-10", 8,  24 ) )  ) ) )
+```
+
+
+# Data from the Mouth of the Columbia River from NOAA [Aug - Sept 2018]'
+```{r}
+#MCR data
+data_MCR<-read.csv("../Data/Crabbing_data_MCR.csv", stringsAsFactors = FALSE)
+data_MCR$Date <- as.Date( data_MCR$Date, format="%m/%d/%y")
+data_MCR$Date[219:327] = rep("2018-09-18",109) #had to add in because in different format 
+data_MCR$Date[328:363] = rep("2018-09-28",36) 
+
+# Redefining Months / years
+data_MCR <- data_MCR %>% 
+  mutate(Month = factor(
+    month(Date, label = FALSE),   # thing you're converting
+    1:12,                                  # values it could take
+    labels =                               # how they should appear
+      c("January", "February", "March", "April",
+      "May", "June", "July", "August",
+      "September", "October", "November", "December"),
+    ordered = TRUE))
+data_MCR$Year <- as.numeric( format(data_MCR$Date, format="%Y") )
+
+#Reorder df
+data_MCR <- data_MCR[,c(1,10,2:9)]
+colnames(data_MCR)[colnames(data_MCR) == "Carapace.Width"] <- "CW"
+
+#Adds soak times (Email corespondance 8/20)
+data_MCR$Soak.Time.hr <- ifelse(data_MCR$Date == "2018-08-23", 23, 
+       ifelse(data_MCR$Date == "2018-08-30", 19,
+       ifelse(data_MCR$Date == "2018-09-18", 24,
+       ifelse(data_MCR$Date == "2018-09-28", 2.5,NA ) ) ) )
+```
+
+
