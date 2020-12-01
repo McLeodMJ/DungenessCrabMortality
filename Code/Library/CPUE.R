@@ -7,16 +7,11 @@
 
 CPUE <- function(data){
   
-  # Making a Julian date by the year 
-  data$J.date <- julian.Date(data$Date, as.Date("2013-01-01"), by= 'Year' )
-  for (i in 1:nrow(data)){
-    if(data$Year[i] != 2013) {
-      n = data$Year[i] - 2013;
-      data$J.date[i] <- data$J.date[i] - (365 * n) 
-    }
-  }
+  data <- data %>% mutate(J.date = yday(as_date(Date)))
+  
+  
   # estimating CPUE
-   data <- data %>% 
-     mutate(Effort = Soak.Time.hr * Total.pots) %>%
-     mutate(CPUE = Total.crabs / Effort)
+  data <- data %>% 
+    mutate(Effort = Soak.Time.hr * Total.pots) %>%
+    mutate(CPUE = Total.crabs / Effort)
 }
