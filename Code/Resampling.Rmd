@@ -20,6 +20,7 @@ load("../Data/Source.D.crab.Rdata")
 
 library(ggplot2)
 library(dplyr)
+library(tidyr)
 library(lubridate)
 library(reshape2)
 suppressPackageStartupMessages("Done")
@@ -45,42 +46,31 @@ Apr_Sept_CPUE <- Apr_Sept_CPUE[Apr_Sept_CPUE$Date != "2020-09-01", ] #save only 
 ```
 
 
-# Set up DF of Pre-Post Molt dates from 2014 & 2020 w/ unaccounted pots 
+# Accounting for missing pots in sub-legal size class
 ```{r}
-###Trying to reformat df so that it includes pots that crabs were not observed in even though the pots were deployed. Total number of pots deployed is different for each sample date. 
+# first set as ordered factor
+Apr_Sept_CPUE$Pot <- as.ordered(Apr_Sept_CPUE$Pot)
+# set to max number of levels
+levels(Apr_Sept_CPUE$Pot) = 1:12
+# expand out the table and fill in the crabs per pot values with 0's
+Apr_Sept_CPUEtemp <- Apr_Sept_CPUE %>% 
+  complete(expand(Apr_Sept_CPUE, Date, Pot), fill = list(Crabs.per.Pot = 0))
 
-# Aggregate across Date & Pot
-Sample_Dates <- aggregate(cbind(Year, Month, Total.pots, Total.crabs, Effort) ~ Date, data = Apr_Sept_CPUE, mean)
-Sample_Dates$Date <- as.factor(Sample_Dates$Date)
+# fill the NA data in the other columns with the value above
+Apr_Sept_CPUEtemp <- Apr_Sept_CPUEtemp %>%
+  fill(Month:Effort)
 
-#saves the total pots for use in for loop
-total.pots <- Sample_Dates$Total.pots
+# remove those rows that exceed the total.pots for that date
+# need the group_by otherwise it will take the max for the whole Total.pots column (which is 12)
+Resample_CPUE <- Apr_Sept_CPUEtemp %>% 
+  group_by(Date) %>% 
+  filter(Pot <= max(Total.pots)) %>% 
+  ungroup()
 
-# Account for pots that were sampled but no sub-legal males were present in that pot
-  df <- Apr_Sept_CPUE[ ,c(1,4,8)] #just values per pot
-  df$Pot <- factor(df$Pot, levels=1:max(total.pots)) #make factor so cast each sample date across  pots (1-12)
-  Resample_CPUE <-dcast(df, Date~Pot, add.missing=TRUE, fill=0) #reformat the df to include Pots not present in wide format
-
-  ###MISSING POT 4 B/C APPARENTLY CRABS WERE NEVER CAUGHT IN 4TH POT (EVEN THOSE THAT INCLUDED MORE THAN 4 POTS IN A SAMPLE DATE)
-Resample_CPUE$v4 <- rep(0,4)
-Resample_CPUE[,c(1:4,13,5:12)] #doesnt work
-  
-#Want to make the pots outside the max pot range for that specific sample NA so that I can then move forward with removing NAs after melt()  
-for(i in 1:nrow(Resample_CPUE)){
-  Resample_CPUE[i, c(total.pots[i]+2) : length(Resample_CPUE)] <- NA
-}  
- 
-  Resample_CPUE <- melt(Resample_CPUE) #back to long format
-  Resample_CPUE <- na.omit(Resample_CPUE[, c(1,3,2)]) # reorganize
-  colnames(Resample_CPUE)[colnames(Resample_CPUE) == "value"] <- "Crabs.per.Pot"
-
-#Reorder by date
-  index <- with(Resample_CPUE, order(Date, Pot)) #organizes by month then year
-  Resample_CPUE <- Resample_CPUE[index,]
-
-Resample_CPUE <-merge(Resample_CPUE, Sample_Dates, by="Date", all=TRUE)
-Resample_CPUE <- Resample_CPUE[, c(1,4,5,2,3,6:8)]
- 
+# Fix refilled missing values that were mislabeled pots and were at the start of the new sample date
+ Resample_CPUE[7:8,3:7 ] <- NA
+ Resample_CPUE[7:9, ] <- Resample_CPUE[7:9, ] %>% 
+  fill(Month:Effort, .direction = "up")
 ```
 
 
@@ -90,7 +80,7 @@ Sim_CPUE <- Resample_CPUE # rename so dont overwrite original resample_cpue
 Sim_CPUE$Crabs.per.Pot <- rep(NA, nrow(Sim_CPUE)) #to overwrite the real values w/ sample()
 Nat_Mort <- data.frame(Sample_Date = as.character(unique(Resample_CPUE$Date))) #df to store iterations
 
-pots <- aggregate(Total.pots ~ Date, data=Resample_CPUE, max)[,2] # saves total no.pots for each sample date 
+pots <- aggregate(Total.pots ~ Date, data = Resample_CPUE, max)[,2] # saves total no.pots for each sample date 
 
 # run resampling throug 1000 iterations
 tstep = 1000
