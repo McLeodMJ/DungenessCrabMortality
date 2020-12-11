@@ -5,36 +5,30 @@
 ###' y - Yes limit to just april and september as molt months
 ########################################################
 
-est.mort.CPUE <- function(source, data, limit){
-  #develop a calc across all data 
-  if(limit == "N"){
-    data <- aggregate(cbind(Month, Year, J.date, Soak.Time.hr, Total.pots, Total.crabs, Effort, CPUE) ~ Date, data = source, mean) #reports 
-    data$N.Mort <- rep(NA, nrow(data)) #NULL column
+est.mort.CPUE <- function(data, limit){
+  # develop a calc across all data 
+  if(limit == "N"){  
+  data <- data %>% 
+    group_by(Date, Month, Year, J.date) %>% 
+    summarise(across(Soak.Time.hr : CPUE, mean))
   }
+  
   # develop a calc. for dates of specific interst [molt season]
   if(limit == "Y"){
-    data <- aggregate(cbind(Month, Year, J.date, Soak.Time.hr, Total.pots, Total.crabs, Effort, CPUE) ~ Date, data = source, mean) #reports 
-    data$N.Mort <- rep(NA, nrow(data))
-    data <- subset(data, Month == "4" | Month == "9")
+  data <- data %>% group_by(Date, Month, Year, J.date) %>% 
+    summarise(across(Soak.Time.hr : CPUE, mean)) %>% 
+    filter(month(Date) %in% c(4,9)) %>% 
+    filter(!Date =="2013-09-13" & !Date == "2020-09-01")
   }
   
-  #estimating mortality for samples in same year but different months
-    for(i in 2:nrow(data)){
-      if(data$Year[i] == data$Year[i-1] & data$Month[i] != data$Month[i-1]){
-       data$N.Mort[i] <- (-1/( (data$J.date[i]) - (data$J.date[i-1]) ) )* log( data$CPUE[i] / data$CPUE[i-1] )
-      }
-    }
-    return(data)
-  } 
-
-
-
+  # estimating mortality for samples in same year but different months
+  data$N.Mort <- rep(NA, nrow(data)) #NULL column
   
-## my attempt with tidyverse
-#estimating mortality for samples in same year but different months
-#for(i in 2:nrow(data)){
- # if(data$Year[i] == data$Year[i-1] & data$Month[i] != data$Month[i-1]){
-  #  data <- data %>%
-    #  mutate(N.Mort[i] <- (-1 / (J.date[i] - J.date[i-1])) * logCPUE[i]/ CPUE[i-1])
- # }
-
+  # I actually can't think of a tidyverse way to do this bit... 
+  for(i in 2:nrow(data)){
+    if(data$Year[i] == data$Year[i-1] & data$Month[i] != data$Month[i-1]){
+      data$N.Mort[i] <- (-1/( (data$J.date[i]) - (data$J.date[i-1]) ) )* log( data$CPUE[i] / data$CPUE[i-1] )
+    }
+  }
+  return(data)
+}
