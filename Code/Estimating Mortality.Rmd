@@ -35,25 +35,29 @@ source("./Library/molt.prob.R")
 source("./Library/size.class.R")
 
 load("../Data/Source.D.crab.Rdata")
-data_Molt <- subset(Pots_N,  Month == "April" | Month == "September") #Pre-molt and post-molt
-Sub_males <- size.class(Pots_N, 1, "sub")
+#data_Molt <- subset(Pots_N,  Month == "April" | Month == "September") #Pre-molt and post-molt
 ```
 
 
 # Run functions to get Natural Mortality estimates via CPUE
 ```{r}
-Pots_N <- total.pots.crabs(Pots_N)
-Pots_N <- CPUE(Pots_N)
-Total_Mort_CPUE <- est.mort.CPUE(Pots_N, Total_Mort_CPUE, "N")
-Est_Mort_CPUE <- est.mort.CPUE(Pots_N, Est_Mort_CPUE, "Y")
+Sub_males <- total.pots.crabs(Pots_N, "sub")
+Sub_males <- CPUE(Sub_males)
+Total_Mort_CPUE <- est.mort.CPUE(Sub_males, "N")
+Est_Mort_CPUE <- est.mort.CPUE(Sub_males, "Y")
 
 #Cond_Pots_N <- total.crabs.per.pot(Pots_N)
 ```
 
-
+# Estimate using the molt-in and molt-out proportions 
 ```{r}
-Pots_N<- molt.prob(Pots_N)
+Males <- total.pots.crabs(Pots_N, "total")
+Males <- CPUE(Males)
+Males <- molt.prob(Males)
 
+#prepare df of survival estiamtes
+Est_Mort_InOut <- as.data.frame(rbind(2014,2020))
+Est_Mort_InOut$N.mort <- rbind(surv.molt(Males, 2014, 1), surv.molt(Males, 2020, 1))
 ```
 
 
