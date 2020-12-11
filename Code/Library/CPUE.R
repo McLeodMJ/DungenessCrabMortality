@@ -9,7 +9,6 @@ CPUE <- function(data){
   
   data <- data %>% mutate(J.date = yday(as_date(Date)))
   
-  
   # estimating CPUE
   data <- data %>% 
     mutate(Effort = Soak.Time.hr * Total.pots) %>%
