@@ -1,12 +1,16 @@
 #########################################################################################################
 # Survival Molt function
 ## Data contains only years where there is both April and September data for male D.crab
-## Proportion of cohort that goes into next size class is 100% for juvenile and subadult males
+## Proportion of cohort that goes into next size class is 100% for juvenile and sub-adult males
 #### [did NOT included in calc given prop.=1]
 # juv <140mm
 # subadult 140-159mm
 # legal >=160
-### different molt probabilities for sub-adult class: 100-150mm AND  150-180mm 
+### different molt probabilities for sub-adult class: 100-150mm AND  150-180mm [Zhang et al. 2014]
+
+#' data = data of all male crab sizes
+#' y = year (numeric)
+#' a = change the format of the answer? not sure why..
 #########################################################################################################
 
 # Function for proportion of pop that molts from April --> September
