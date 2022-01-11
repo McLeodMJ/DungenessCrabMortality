@@ -6,21 +6,21 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-setwd("~/Documents/THESIS/Dungeness_crab/DungenessCrabMortality/Code")
+require("knitr")
+opts_knit$set(root.dir = "~/Documents/THESIS/Dungeness_crab/DungenessCrabMortality/Code")
 ```
 
 
 ```{r warnings=FALSE}
-library(ggplot2)
-library(Sleuth3)
-library(multcomp)
-library('patchwork')
-library('RColorBrewer')
-library(viridis)
-library(dplyr)
-library(lubridate)
-library(wesanderson)
+require(ggplot2)
+require(Sleuth3)
+require(multcomp)
+require('patchwork')
+require('RColorBrewer')
+require(viridis)
+require(dplyr)
+require(lubridate)
+require(wesanderson)
 suppressPackageStartupMessages("Done")
 ```
 
@@ -37,16 +37,17 @@ source("./Library/Total.Pots.Crabs.R")
 source("./Library/Total.Crabs.Per.Pot.R")
 source("./Library/CPUE.R")
 source("./Library/Est.Mort.CPUE.R")
+source("./Library/molt.prob.R")
 ```
 
 
 # Boxplots of Trawl data & Pot data
 ```{r}
 #shows TRAWL data w/ potential outliers by month
-trawl <- ggplot(Trawl, aes(Month, CW))+ geom_boxplot(fill = "green")
+trawl <- ggplot(Trawl, aes(Month, CW))+ geom_boxplot(fill = "green")+ ggtitle("Trawl Data")
  
 #shows potential outliers by month
-pot <- ggplot(Pots_N, aes(Month, CW))+ geom_boxplot(fill = "blue")
+pot <- ggplot(Pots_N, aes(Month, CW))+ geom_boxplot(fill = "blue") + ggtitle("Pot Data")
 trawl + pot
 ```
 
@@ -77,7 +78,8 @@ ggplot(Pots_N %>% group_by(Sex ==1), aes(x=CW, fill=as.character (Year))) +
 ggplot(Sub_males, aes(x=CW, fill=as.character (Year))) +
      geom_histogram(binwidth=4)+ 
      facet_wrap(~Month, nrow=2) + #separates the graphs by month
-     scale_fill_brewer(palette = "Accent") 
+     scale_fill_brewer(palette = "Accent") +
+     ggtitle("Sub-Adult males")
 ```
 
 
@@ -87,6 +89,103 @@ ggplot(Sub_males, aes(x=CW, fill=as.character (Year))) +
 Pots_N <-molt.prob(Pots_N)
 ggplot(Pots_N, aes(x=CW, y= Molt.prob)) +
   geom_point(aes(color = CW)) +
-  scale_color_viridis(option = "D")+
+  scale_color_viridis_c()+
   labs(title= "Size-specific molting probabilities")
 ```
+
+
+# Shell conditions
+```{r}
+#Pots_N <- Pots_N[Pots_N$Date == "10/17/20" | Pots_N$Date =="9/1/20" | Pots_N$Date =="9/15/20" |Pots_N$Date == "9/29/20",]
+Pots_N <- Pots_N[Pots_N$Date == "2020-10-17" | Pots_N$Date =="2020-09-01" | Pots_N$Date =="2020-09-15" |Pots_N$Date == "2020-09-29",]
+X <- Total_data_N[ Total_data_N$Date == "2020-10-17" | Total_data_N$Date =="2020-09-01" | Total_data_N$Date =="2020-09-15" |Total_data_N$Date == "2020-09-29",]
+
+# may need to change X below to shell cond 
+ggplot(X, aes(x=Shell.Cond, fill= Shell.Cond))+
+  geom_bar()+
+  theme(axis.text.x=element_text(angle=40, hjust=1))+
+  facet_wrap(~Date, nrow=2)
+```
+
+
+
+# ALL Data for sub-males 
+```{r}
+# just sub adults
+Trawl_Sub <-size.class(Trawl, 1, "sub")
+Pots_N_Sub <- size.class(Pots_N, 1, "sub")
+
+#all datasources together 
+All <- rbind(MCR_Pots_Sub[, c(2,3,5)], MCR_Seine_Sub[, c(2,3,5)], Pots_N_Sub[, c(3,2,4)],  Sub_males_Estr[, c(4,2,7)], Trawl_Sub[, c(3,2,4)] )
+All$Data <- c(rep("MCR_Pots", nrow(MCR_Pots_Sub)), rep("MCR_Seine", nrow(MCR_Seine_Sub)), rep("Newp_pots", nrow(Pots_N_Sub)), rep("Yaq_trawl", nrow(Sub_males_Estr)), rep("Newp_Trawl", nrow(Trawl_Sub)) )
+
+ggplot(All, aes(x=CW, fill=as.character (Data))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) + #separates the graphs by month
+     scale_fill_brewer(palette = "Accent")
+
+```
+
+
+
+```{r}
+
+# make them just 
+MCR_Pots_Sub <- MCR_Pots_Sub[MCR_Pots_Sub$Year != 2009, ]
+#No MCR seine b/c none fit the criteria
+Pots_N_Sub <- Pots_N_Sub[Pots_N_Sub$Year == 2014 | Pots_N_Sub$Year == 2020, ]
+Sub_males_Estr <- Sub_males_Estr[Sub_males_Estr$Year != 2004, ]
+Trawl_Sub <- Trawl_Sub[Trawl_Sub$Year == 2011 | Trawl_Sub$Year == 2014, ]
+
+#remove useless months
+All_Criteria_sub <- rbind(MCR_Pots_Sub[, c(2,3,5)],  Pots_N_Sub[, c(3,2,4)],  Sub_males_Estr[, c(4,2,7)], Trawl_Sub[, c(3,2,4)] )
+All_Criteria_sub$Data <- c(rep("MCR_Pots", nrow(MCR_Pots_Sub)), rep("Newp_pots", nrow(Pots_N_Sub)), rep("Yaq_trawl", nrow(Sub_males_Estr)), rep("Newp_Trawl", nrow(Trawl_Sub)) )
+
+
+ggplot(All_Criteria_sub, aes(x=CW, fill=as.character (Data))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) + #separates the graphs by month
+     scale_fill_brewer(palette = "Accent")
+
+
+Yr_03 <- ggplot(All_Criteria_sub[All_Criteria_sub$Year == 2003,], aes(x=CW, fill=Data)) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month) + #separates the graphs by monthscale_fill_brewer("steelblue")
+     scale_fill_manual(values = c("Yaq_trawl" = "steelblue"))+
+      ggtitle("Year 2003")
+
+Yr_05 <- ggplot(All_Criteria_sub[All_Criteria_sub$Year == 2005,], aes(x=CW, fill=Data)) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month) + #separates the graphs by month scale_fill_brewer("steelblue")
+    scale_fill_manual(values = c("Yaq_trawl" = "steelblue")) +
+    ggtitle("Year 2005")
+
+Yr_08 <- ggplot(All_Criteria_sub[All_Criteria_sub$Year == 2008,], aes(x=CW, fill=Data)) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month) + #separates the graphs by month scale_fill_brewer("orange")
+    scale_fill_manual(values = c( "MCR_Pots" = "salmon1")) +
+    ggtitle("Year 2008")
+
+Yr_11 <- ggplot(All_Criteria_sub[All_Criteria_sub$Year == 2011,], aes(x=CW, fill=Data)) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month) + #separates the graphs by month scale_fill_brewer("darkolivegreen")
+    scale_fill_manual(values = c( "Newp_Trawl" = "yellow3")) +
+    ggtitle("Year 2011")
+
+Yr_14 <- ggplot(All_Criteria_sub[All_Criteria_sub$Year == 2014,], aes(x=CW, fill=Data)) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month) + #separates the graphs by month scale_fill_brewer("purple","darkolivegreen")
+    scale_fill_manual(values = c("Newp_pots" = "darkgreen", "Newp_Trawl" = "yellow3"))+
+    ggtitle("Year 2014")
+
+Yr_20 <- ggplot(All_Criteria_sub[All_Criteria_sub$Year == 2020,], aes(x=CW, fill=Data)) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month) + #separates the graphs by month scale_fill_brewer("purple")
+    scale_fill_manual(values = c("Newp_pots" = "darkgreen")) +
+    ggtitle("Year 2020")
+
+Yr_03 + Yr_05 + Yr_08 
+Yr_11 + Yr_14 + Yr_20 
+
+```
+
