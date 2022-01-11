@@ -1,0 +1,113 @@
+---
+title: "WA sites break down"
+author: "Montana McLeod"
+date: "11/17/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+require("knitr")
+opts_knit$set(root.dir = "~/Documents/THESIS/Dungeness_crab/DungenessCrabMortality/Code")
+```
+
+# Glen cove
+```{r echo = FALSE}
+library(ggplot2)
+load("../Data/WDFW_Sites.Rdata")
+
+ggplot(WDFW_GCove[WDFW_GCove$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
+# Kala Point
+```{r echo = FALSE}
+ggplot(WDFW_KPt[WDFW_KPt$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
+
+# Kilisut Bay
+```{r echo = FALSE}
+ggplot(WDFW_KBay[WDFW_KBay$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
+
+# Lilliwaup
+```{r echo = FALSE}
+ggplot(WDFW_Lil[WDFW_Lil$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
+
+# Oak Bay
+```{r echo = FALSE}
+ggplot(WDFW_OBay[WDFW_OBay$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
+
+# Port Gamble
+```{r echo = FALSE}
+ggplot(WDFW_PGam[WDFW_PGam$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
+
+# Quilicene
+```{r echo = FALSE}
+ggplot(WDFW_Quil[WDFW_Quil$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
+
+# Scenic Beach
+```{r echo = FALSE}
+ggplot(WDFW_SBch[WDFW_SBch$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
+
+
+# Squamish Hbr
+```{r echo = FALSE}
+ggplot(WDFW_SHbr[WDFW_SHbr$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
+
+# Tahuya
+```{r echo = FALSE}
+ggplot(WDFW_Tyua[WDFW_Tyua$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
+
+# Vinland
+```{r echo = FALSE}
+ggplot(WDFW_Vland[WDFW_Vland$CW >=160, ], aes(x=CW, fill=as.character (ShellCondition))) +
+     geom_histogram(binwidth=4)+ 
+     facet_wrap(~Month, nrow=2) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+ theme(legend.position="bottom")
+```
+
