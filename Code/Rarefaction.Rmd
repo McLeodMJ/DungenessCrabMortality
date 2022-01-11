@@ -6,8 +6,8 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-setwd("~/Documents/2019-2020/THESIS/Dungeness_crab/Code")
+require("knitr")
+opts_knit$set(root.dir = "~/Documents/THESIS/Dungeness_crab/DungenessCrabMortality/Code")
 ```
 
 
@@ -31,7 +31,12 @@ library(wesanderson)
 ## Eder grant Data from 2020
 ```{r}
 #Data collected in 2020 (thru September 2020)
-NEW_data<-read.csv("./Data/CrabSizes2020.csv" , stringsAsFactors = FALSE)
+load("../Data/Source.D.crab.Rdata")
+source("./Library/size.class.R")
+
+New_data <- size.class(Pots_N, 1, "sub")
+
+NEW_data<-read.csv("../Data/CrabSizes2020.csv" , stringsAsFactors = FALSE)
 colnames(NEW_data)<- c("Date","Vessel", "Pot","Lat","Long","Depth", "Box", "BAIT","SEX","Carapace.Width","Shell.Cond","Comments", "LL1", "LL2") #rename to match previous DF for the Merge
 
 #Fix lat errors
@@ -53,8 +58,7 @@ NEW_data <- NEW_data %>%
       c("January", "February", "March", "April",
       "May", "June", "July", "August",
       "September", "October", "November", "December"),
-    ordered = TRUE)) #Sets the Month to automatically order via month order [lubridate package]
-
+    ordered = TRUE)) 
 NEW_data$Soak.Time.hr <- ifelse(NEW_data$Date == "2020-06-10", 8,  24 )
 
 #Fix carapace width errors
@@ -157,12 +161,13 @@ colnames(Avg_rare)[colnames(Avg_rare) == "V502"] <- "Avg"
 
 # Rarefaction of Sub-adult Males
 ```{r}
+Avg_rare <- data.frame(Pots = c(1:6)) #df for result
 n = 50 #no. of iterations 
 pots = 6 #no of total pots
 
 for(p in 1:pots){
     for(s in 1:n){
-          Est<- rarefaction(crabs.per.pot.sub.males, p, pots)
+          Est<- rarefaction(New_data, p, pots)
             # Equation for natural mortality - only keeps last N. mort. value from june to july 2020
             if(nrow(Est) == 1){
                 Est$N.Mort <- rep(NA,1) }
