@@ -6,9 +6,10 @@
 
 #' data = full dataset
 #' size = sub: only sub-adult males // total: all males 
+#' sex = 1: male 2: female NA: when either
 ##################################################
 
-total.pots.crabs <- function(data, size){
+total.pots.crabs <- function(data, sex, size){
 
 # for no size limitations
   if(size == "total"){
@@ -18,7 +19,7 @@ total.pots.crabs <- function(data, size){
     data <- inner_join(data, data.summary, by = 'Date')
     
     #now account for JUST the sub-adult males
-    data <- size.class(data, 1, "total")
+    data <- size.class(data, sex, "total")
   }
   
   if(size == "sub"){
@@ -28,12 +29,12 @@ total.pots.crabs <- function(data, size){
     data <- inner_join(data, data.summary, by = 'Date')
     
     #now account for JUST the sub-adult males
-    Sub_males <- size.class(data, 1, "sub")
+    sized_data <- size.class(data, sex, "sub")
   
-  data.sub <- Sub_males %>% group_by(Date) %>% 
+  data.sub <- sized_data %>% group_by(Date) %>% 
     summarise(Total.crabs = n())
     # append the table to the main data table
-    data <- inner_join(Sub_males, data.sub, by = 'Date')
+    data <- inner_join(data, data.sub, by = 'Date')
   }
   
   return(data)
