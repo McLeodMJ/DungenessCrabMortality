@@ -1,0 +1,906 @@
+---
+title: "D.crab_MLE"
+author: "Montana McLeod"
+date: "10/20/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require("knitr")
+opts_knit$set(root.dir = "~/Box Sync/Eder_Dungeness_2020/Model_code")
+```
+
+# load librarys
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(lubridate)
+library(reshape2)
+library(patchwork)
+library(bbmle)
+library(stats)
+ library(viridis)
+suppressPackageStartupMessages("Done")
+
+```
+
+# DeltaT function-  for modifying df to have time diff.
+```{r} 
+delta.T <- function(dat_total){
+  
+  # account for time differences
+  Delta.T <- dat_total %>% 
+    group_by(Date, Month, Year) %>% 
+    summarise()
+  
+  diff.time <- NULL
+  for(d in 2:nrow(Delta.T)){
+    # calculate the diff. in time from the previous sample of SAME year
+    if(Delta.T$Year[d] == Delta.T$Year[d-1]){
+    diff.time[d] <- difftime(Delta.T$Date[d], Delta.T$Date[d-1], units = "weeks")
+    }
+    
+    #check for if the last two samples are not the same year
+    if(Delta.T$Year[nrow(Delta.T)] != Delta.T$Year[c(nrow(Delta.T) -1)]){
+      diff.time[nrow(Delta.T)] = NA
+    }
+  }
+  
+  Delta.T$DeltaT <- diff.time
+ 
+  return(Delta.T)
+}
+```
+
+# Format.size.class  fxn - prepare data to be specific pots of each sample date
+```{r}
+
+format.size.class <- function(dat_total, shell){
+  # NO shell-condition data avail.
+  if(is.na(shell)){ 
+  Pot_data <- dat_total %>% 
+      group_by(Date, Month, Year, Pot) %>% 
+      summarise()
+  }
+  # for shell-condition based analysis
+  if(!is.na(shell)){ 
+  Pot_data <- dat_total %>% 
+      group_by(Date, Month, Year, ShellCondition, Pot) %>% 
+      summarise()
+  }
+  
+  
+    # account for time between samples 
+       Delta.T <- delta.T(dat_total)
+       
+    Pot_data <- left_join(Pot_data, Delta.T, by=c('Date','Month', 'Year'))
+    ##counts the number of juveniles per pot & takes mean 
+    # juvs <- Molt_szn_data %>% 
+    #     group_by(Date, Month, Year, Pot) %>% 
+    #   summarise(Mu_juv = count(CW < 140))
+    
+    juvs <- dat_total %>% 
+      filter( CW < 140) %>% 
+      group_by(Date, Month, Pot, Year) %>% 
+      summarise(Molt.prb_juv = mean(Molt.prob),
+                Mu_juv = n())
+    
+    #juvs <- left_join(juvs, juvs2, by=c('Date','Month', 'Year', 'Pot'))
+    #juvs$Molt.prb_juv <- ifelse(is.na(juvs$Molt.prb_juv), 0, juvs$Molt.prb_juv)
+               
+    
+    ##counts the number of sub-legals [btw 140:149] per pot & takes mean 
+    subs1 <- dat_total %>% 
+      filter( CW %in% 140:149) %>% 
+      group_by(Date, Month, Year, Pot) %>% 
+      summarise(Molt.prb_sub1= mean(Molt.prob),
+                Mu_sub1 = n())
+      
+    
+    ##counts the number of sub-legals [btw 140:149] per pot & takes mean 
+    subs2 <- dat_total %>% 
+      filter( CW %in% 150:159) %>% 
+      group_by(Date, Month, Year, Pot) %>% 
+      summarise(Molt.prb_sub2 = mean(Molt.prob),
+                Mu_sub2 = n())
+    
+    
+    ##counts the number of sub-legals per pot & takes mean 
+    legals <- dat_total %>% 
+      filter( CW > 159) %>% 
+      group_by(Date, Month, Year, Pot) %>% 
+      summarise(Molt.prb_legal = mean(Molt.prob),
+                Mu_legal = n())
+    
+    
+    #merge data
+    Pot_data <- left_join(Pot_data, juvs, by=c('Date','Month', 'Year', 'Pot'))
+    Pot_data <- left_join(Pot_data, subs1, by=c('Date','Month', 'Year', 'Pot'))
+    Pot_data <- left_join(Pot_data, subs2, by=c('Date','Month', 'Year', 'Pot'))
+    Pot_data <- left_join(Pot_data, legals, by=c('Date','Month', 'Year', 'Pot'))
+    #Pot_data[is.na(Pot_data)] <- 0 
+  # if we do not want the molt.prob to be zero & instead excluded, keep as na and just change sum to include na.rm = 0 for molt.in/out
+ 
+    return(Pot_data)
+    }
+```
+
+# format.dat.mll -fxn to reformat data as prior/post dataframe per year at each site 
+```{r}
+
+format.dat.mll <- function(dat_total, pre_time, post_time, pre_shell, post_shell, shell_mth){
+  
+   years <- unique(dat_total$Year)
+   dat <- as.list(years)
+   names(dat) <- c(years)
+  
+for(y in 1:length(years)){
+  dat[[y]] <- list(prior = NULL, 
+                    post = NULL)
+  
+  # make dfs of pre & post molt periods
+ if(shell_mth == TRUE){
+  prior <- dat_total[dat_total$Year == years[y] & dat_total$ShellCondition %in% pre_shell & dat_total$Month %in% pre_time, ] # pre-molt size
+   prior  <- prior[!is.na(prior$Mu_sub1) | !is.na(prior$Mu_sub2), ] # must have at least one sub-leagal szied male from either sub1 or sub2 class
+  post <- dat_total[dat_total$Year == years[y] & dat_total$ShellCondition %in% post_shell & dat_total$Month %in% post_time & !is.na(dat_total$Mu_legal), ] # post-molt size
+ }
+  
+  # set months instead of frequency derived months
+ if(shell_mth == FALSE){
+ prior <- dat_total[dat_total$Year == years[y] & dat_total$ShellCondition %in% pre_shell & dat_total$Month %in% months[4:6], ] # pre-molt ize
+  prior  <- prior  <- prior[!is.na(prior$Mu_sub1) | !is.na(prior$Mu_sub2), ] # must have at least one sub-leagal szied male from either sub1 or sub2 class
+ post <- dat_total[dat_total$Year == years[y] & dat_total$ShellCondition %in% post_shell & dat_total$Month %in% months[7:9] & !is.na(dat_total$Mu_legal), ] # post-molt size
+ }
+  
+  #exclude years that do not have enough data for the calculation 
+    if(nrow(prior) > 0 & nrow(post) > 0){
+      dat[[y]]$prior <- prior
+      dat[[y]]$post <- post
+    }
+  }
+return(dat)
+}
+```
+
+
+## WDFW Data -> make into juv, mu, legal columns
+```{r}
+load("../Data/WDFW_total.Rdata")
+sites <- unique(WDFW_pots_total$Site)
+
+shell <- c(1,2,6:8) # shell conditions we want to reference
+WDFW_total <- WDFW_pots_total[WDFW_pots_total$ShellCondition %in% shell,]
+
+# empty list for WDFW sites
+WDFW_list <- vector(mode = "list", length = length(sites))
+names(WDFW_list) <- sites
+
+WDFW_GCove <- WDFW_total[WDFW_total$Site == sites[1], ]
+  WDFW_list[[1]]  <- as.data.frame(format.size.class(WDFW_GCove, T))
+
+WDFW_KPt <- WDFW_total[WDFW_total$Site == sites[2], ]
+  WDFW_list[[2]] <- format.size.class(WDFW_KPt, T)
+  
+WDFW_KBay <- WDFW_total[WDFW_total$Site == sites[3], ]
+  WDFW_list[[3]] <- format.size.class(WDFW_KBay, T)
+
+WDFW_Lil <- WDFW_total[WDFW_total$Site == sites[4], ]
+  WDFW_list[[4]] <- format.size.class(WDFW_Lil, T)
+
+WDFW_OBay <- WDFW_total[WDFW_total$Site == sites[5], ]
+  WDFW_list[[5]] <- format.size.class(WDFW_OBay, T)
+
+WDFW_PGam <- WDFW_total[WDFW_total$Site == sites[6], ]
+  WDFW_list[[6]] <- format.size.class(WDFW_PGam, T)
+
+WDFW_Quil <- WDFW_total[WDFW_total$Site == sites[7], ]
+  WDFW_list[[7]] <- format.size.class(WDFW_Quil, T)
+
+WDFW_SBch <- WDFW_total[WDFW_total$Site == sites[8], ]
+  WDFW_list[[8]] <- format.size.class(WDFW_SBch, T)
+
+WDFW_SHbr <- WDFW_total[WDFW_total$Site == sites[9], ]
+  WDFW_list[[9]] <- format.size.class(WDFW_SHbr, T)
+
+WDFW_Tyua <- WDFW_total[WDFW_total$Site == sites[10], ]
+  WDFW_list[[10]] <- format.size.class(WDFW_Tyua, T)
+
+WDFW_Vland <- WDFW_total[WDFW_total$Site == sites[11], ]
+  WDFW_list[[11]] <- format.size.class(WDFW_Vland, T)
+  
+```
+ 
+ 
+#freq.dat - function for automating when the pre-molt month seq is
+```{r}
+ months <- c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
+
+freq.dat <-function(x, post_shell){
+  months <- c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
+  # create df for the combo of months that have the most legals w/ soft shell count 
+  Freq_df <- data.frame(Trial = rep(NA, 12), 
+                        Count = rep(NA, 12))
+  Freq_df$Trial[1] <- c("January, February, March")
+  Freq_df$Trial[2] <- c("February, March, April")
+  Freq_df$Trial[3] <- c("March, April, May")
+  Freq_df$Trial[4] <- c("April, May, June")
+  Freq_df$Trial[5] <- c("May, June, July")
+  Freq_df$Trial[6] <- c("June, July, August")
+  Freq_df$Trial[7] <- c("July, August, September")
+  Freq_df$Trial[8] <- c("August, September, October")
+  Freq_df$Trial[9] <- c("September, October, November")
+  Freq_df$Trial[10] <- c("October, November, December")
+  Freq_df$Trial[11] <- c("November, December, January")
+  Freq_df$Trial[12] <- c("December, January, February")
+  
+  # df of soft shell legals
+  x <- x[x$CW >= 160 & x$ShellCondition %in% post_shell, ]
+  
+  # finding the maximum focal pt count
+  for(m in 1:12){ 
+    if(m == 11){
+       xx  <- nrow(x[x$Month %in% months[c(m:c(m+1), 1)], ])
+    }
+    if(m ==12){
+       xx  <- nrow(x[x$Month %in% months[c(m,1:2)], ])
+    }
+     xx  <- nrow(x[x$Month %in% months[m:c(m+2)], ])
+  Freq_df$Count[m] <- xx
+  }
+return( Freq_df[which.max(Freq_df$Count), 1])
+}
+
+```
+
+
+
+# Data reformated with the new format function by (freq. month)
+```{r}
+  
+### data with mle format  
+  WDFW_mll_list <- vector(mode = "list", length = length(sites))
+names(WDFW_mll_list) <- sites
+
+# find the most frequent consecutive 3-mo of soft shell legals - set as post values, backtrack for prior months
+  freq.dat(WDFW_GCove, c(6:8))
+   WDFW_mll_list[[1]] <- format.dat.mll(WDFW_list[[1]], months[c(12, 1:2)], months[3:5], c(1:2), c(6:8), T)
+   freq.dat(WDFW_KBay, c(6:8))
+   WDFW_mll_list[[2]] <- format.dat.mll(WDFW_list[[2]], months[c(12, 1:2)], months[3:5], c(1:2), c(6:8), T)
+   freq.dat(WDFW_KPt, c(6:8))
+   WDFW_mll_list[[3]] <- format.dat.mll(WDFW_list[[3]], months[1:3], months[4:6], c(1:2), c(6:8), T)
+   freq.dat(WDFW_Lil, c(6:8))
+   WDFW_mll_list[[4]] <- format.dat.mll(WDFW_list[[4]], months[c(11:12, 1)], months[2:4], c(1:2), c(6:8), T)
+   freq.dat(WDFW_OBay, c(6:8))
+   WDFW_mll_list[[5]] <- format.dat.mll(WDFW_list[[5]], months[1:3], months[4:6], c(1:2), c(6:8), T)
+   freq.dat(WDFW_PGam, c(6:8))
+   WDFW_mll_list[[6]] <- format.dat.mll(WDFW_list[[6]], months[1:3], months[4:6], c(1:2), c(6:8), T)
+   freq.dat(WDFW_Quil, c(6:8))
+   WDFW_mll_list[[7]] <- format.dat.mll(WDFW_list[[7]], months[5:7], months[8:10], c(1:2), c(6:8), T)
+  freq.dat(WDFW_SBch, c(6:8))
+   WDFW_mll_list[[8]] <- format.dat.mll(WDFW_list[[8]], months[5:7], months[8:10], c(1:2), c(6:8), T)
+   freq.dat(WDFW_SHbr, c(6:8))
+   WDFW_mll_list[[9]] <- format.dat.mll(WDFW_list[[9]], months[1:3], months[4:6], c(1:2), c(6:8), T)
+   freq.dat(WDFW_Tyua, c(6:8))
+   WDFW_mll_list[[10]] <- format.dat.mll(WDFW_list[[10]], months[c(12, 1:2)], months[3:5], c(1:2), c(6:8), T)
+   freq.dat(WDFW_Vland, c(6:8))
+   WDFW_mll_list[[11]] <- format.dat.mll(WDFW_list[[11]], months[1:3], months[4:6], c(1:2), c(6:8), T)
+   
+  
+```
+
+
+# Molt.ll.shell Fxn - for WDFW by site and shell condition 
+```{r}
+molt.LL.shell <- function(dat, dat_total, k1, k2, k3, Mu1, Mu2, M){
+  years <- unique(dat_total$Year)
+  
+LL1 <- rep(NA, length(years))
+LL2 <- rep(NA, length(years))
+LL3 <- rep(NA, length(years))
+    # prep data for the specific year 
+
+  for(y in 1:length(years)){
+     # create while loop to only work for years that has data for prior AND post
+    if(!is.null(dat[[y]]$prior) & !is.null(dat[[y]]$post)){
+      
+    # make dfs of pre & post molt periods
+    prior <- dat[[y]][1]$prior
+      #dat[dat$Year == years[y] & dat$ShellCondition %in% 1:2 & dat$Month %in% c("March", "April", "May", "June"), ] # pre-molt size
+    # prior <- #prior[!is.na(prior$Mu_sub1) | !is.na(prior$Mu_sub2), ] # must have at least one sub-leagal szied male from either sub1 or sub2 class
+    post <- dat[[y]][2]$post
+       #dat[dat$Year == years[y] & dat$ShellCondition %in% 6:8 & dat$Month %in% c("September", "October", "November", "December") & !is.na(dat$Mu_legal), ] # post-molt size
+    
+    # calcuate the avg time difference btw post & pre molt periods
+    DeltaT =  as.numeric(abs(difftime(median(post$Date), median(prior$Date), units = "weeks" ))) / 52
+    
+  # BOTH sub-legal classes as Log likelihoods at time 1 [ pre-molt]
+   LL1[y] <- -mean(dnbinom(x = na.omit(prior$Mu_sub1), mu = exp(Mu1), size = exp(k1), log = T))
+   LL2[y] <- -mean(dnbinom(x = na.omit(prior$Mu_sub2), mu = exp(Mu2), size = exp(k2), log = T))
+   
+  # account for crabs molting in & out 
+      lin_mu_1 = exp(Mu1) * mean(prior$Molt.prb_sub1, na.rm = T) * exp(-exp(M) * DeltaT) 
+      lin_mu_2 = exp(Mu2) * mean(prior$Molt.prb_sub2, na.rm = T) * exp(-exp(M) * DeltaT)
+      if(is.nan(lin_mu_1)){lin_mu_1 = 0}
+      if(is.nan(lin_mu_2)){lin_mu_2 = 0}
+     mu_post = lin_mu_1 + lin_mu_2
+       
+  # sub legal males as log likelihood at time 2 [post-molt]
+    LL3[y] <- -mean(dnbinom(x = na.omit(post$Mu_legal), mu = mu_post, size = exp(k3), log = T))
+    } #end of if statement - skip null years
+  } #end of for loop over years
+ 
+#if sub-legals1 or 2 have only NAs make 0
+  if(is.nan(mean(LL1, na.rm = T))){LL1 = 0}
+  if(is.nan(mean(LL2, na.rm = T))){LL2 = 0}
+
+  #sum_log_lik <- sum(LL1,LL2,LL3, na.rm = T)
+  sum_log_lik <- sum(mean(LL1,na.rm = T), mean(LL2, na.rm = T), mean(LL3, na.rm = T))
+ sum_log_lik[which(!is.finite(sum_log_lik))] <- log(1e-320) 
+ return(sum_log_lik)
+}
+
+#zz<-molt.LL.shell(wdfw_1, WDFW_list[[1]], log(10), log(10), log(10), log(mean(WDFW_list[[1]]$Mu_sub1, na.rm = T)), log(mean(WDFW_list[[1]]$Mu_sub2, na.rm = T)), log(0.2))
+```
+
+
+
+
+
+#shell condition MLE Results - WDFW data
+```{r}
+WDFW_Results <- data.frame(Site = sites,
+                           M = rep(-999, length(sites)),
+                           Std_error = rep(-999, length(sites)))
+
+for(d in 1:length(sites)){
+  
+  
+ Molt.LL2 <- mle2(minuslogl =  molt.LL.shell, 
+                 start = list(k1 = log(10),
+                                #log(mom(mean(WDFW_list[[d]]$Mu_sub1, na.rm = T), var(WDFW_list[[d]]$Mu_sub1, na.rm = T))), # lognormal params
+                k2 = log(10),
+                  #mom(mean(WDFW_list[[d]]$Mu_sub2, na.rm = T), var(WDFW_list[[d]]$Mu_sub2, na.rm = T))),
+                k3 = log(10),
+                  #mom(mean(WDFW_list[[d]]$Mu_legal, na.rm = T), var(WDFW_list[[d]]$Mu_legal, na.rm = T))),
+                M = log(0.3),
+                Mu1 = log(mean(WDFW_list[[d]]$Mu_sub1, na.rm = T)),
+                Mu2 = log(mean(WDFW_list[[d]]$Mu_sub2, na.rm = T))), 
+                data = list(dat = WDFW_mll_list[[d]], dat_total = WDFW_list[[d]]))
+               #method = "L-BFGS-B", 
+               #lower = rep(-1e10, 6), upper = rep(1e10, 6),
+               #control = list(trace = 5, fnscale = -1) )
+                #method = "Nelder-Mead") 
+ print(summary(Molt.LL2)) #watch updates
+ # EXP the mortality estimate 
+ 
+ WDFW_Results[d, 2] <- coef(summary(Molt.LL2))[6,1]
+ WDFW_Results[d, 3] <- coef(summary(Molt.LL2))[6,2]
+}
+
+ # calculate upper-lower cof. bounds in log space --> exp. 
+ #WDFW_Results[d, 3] <- if(!is.na(coef(summary(Molt.LL2))[6,2])){
+ #      coef(proffun(Molt.LL2, std.err = coef(summary(Molt.LL2))[,2], try_harder = T )[6])
+ #  # want to record NA so it dpesnt no disrupt est.
+ #  }else{(is.na(coef(summary(Molt.LL2))[6,2]))
+ #    NA
+ #  }
+
+#}
+WDFW_Results$Upper <- exp(WDFW_Results$M  + 1.96*WDFW_Results$Std_error)
+  #WDFW_Results$Std_error * 1.96 + WDFW_Results$M
+WDFW_Results$Lower <- exp(WDFW_Results$M  - 1.96*WDFW_Results$Std_error)
+  #WDFW_Results$Std_error * 1.96 - WDFW_Results$M  
+WDFW_Results$M <- exp(WDFW_Results$M)
+
+# plot of each site with estimate of mortality 
+ ggplot(WDFW_Results, aes(x=Site, y= M, color= Site)) +
+  geom_errorbar(aes(ymin= Lower, ymax=Upper), width=.1) +
+   ylab("Natural Mortality Rate")+
+   ggtitle("WDFW Datasets")+
+   ylim(0,4)+
+  geom_point() +
+    theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1)) +
+   scale_color_viridis(discrete = T) +
+  guides(color=FALSE)
+ ### NOTES: 
+ ####  sites with very low M have the most soft-shell legal sized crabs during april-June which is also the months with the highest counts for all male crabs, so the pre-molt stage is more data deficient than the post-molt stage skewing the results to a smaller mortality rate
+ ### tahyua is estimated as a very large M - likely due to data having more timeseries avialable (6) than others and an over all higher avg sub-legals caught per trap --> smaller overdispersion parameter 
+ 
+```
+
+
+### bootstrap 
+```{r}
+set.seed(105)
+
+store.matrixBedAngII = foreach(i = 1:2, .combine = "rbind", .packages = c("deSolve", "bbmle")) %dopar% {
+  
+  for(d in 1:length(sites)){
+  
+     index = sample(1:nrow(WDFW_list[[d]]), dim(WDFW_list[[d]])[1], replace = TRUE)
+     data.all = WDFW_list[[d]][index,]
+     
+  
+  m = mle2(minuslogl =  molt.LL.shell, 
+                 start = list(k1 = log(10),
+                k2 = log(10),k3 = log(10),
+                M = log(0.3),
+                Mu1 = log(mean(WDFW_list[[d]]$Mu_sub1, na.rm = T)),
+                Mu2 = log(mean(WDFW_list[[d]]$Mu_sub2, na.rm = T))), 
+                data = list(dat = WDFW_mll_list[[d]], dat_total = WDFW_list[[d]]),
+           method = "Nelder-Mead",
+           control = list(maxit = 1000))
+  
+  }
+  store.matrixBedAngII[i, ] = as.vector(t(rbind(coef(summary(m))[, 1])))
+}
+
+
+
+
+
+
+####
+d=1
+wdfw_dat <- WDFW_list[[d]]
+#wdfw_dat_all <- WDFW_mll_list[[d]]
+years <- unique(wdfw_dat$Year)
+shell = list(pre=6:8, 
+            post= 1:2)
+
+for (i in 1:1000){
+
+  NewData <- data.frame()
+
+  for (m in shell){
+    for (y in Years){
+
+      # resampling data 
+  Howmanypots <- unique(wdfw_dat$Pot[wdfw_dat$ShellCondition %in% m  & wdfw_dat$Year== y ]) # records pot #s for each sample date
+  Pots <- sample(Howmanypots, length(Howmanypots), replace=TRUE) # replacement so no duplicates
+
+
+  for (p in Pots){
+# create new data set and reformat for mle
+    NewData.tmp <- wdfw_dat[which(wdfw_dat$Pot == p), ] 
+    wdfw_mll_temp <- format.dat.mll(NewData.tmp, months[c(12, 1:2)], months[3:5], c(1:2), c(6:8), T)
+####################################
+    ?????? #how do we save this given that we separate it by prior/post in years?
+      
+    NewData = rbind(NewData, wdfw_mll_temp)
+#return(NewData)
+  } #end of pots loop
+ } #end of years lop
+} #end of shell cond loop
+  
+ Est_Mort_InOut <- rbind( est.mort.InOut(NewData, 2014, 1),  est.mort.InOut(NewData, 2020, 1), est.mort.InOut(NewData, 2021, 1))
+Nat_Mort_InOut[,i+1] <- Est_Mort_InOut
+} #end of iterations loop
+
+```
+
+
+
+
+
+
+
+
+#histograms for presentation
+```{r}
+ yr_2004 <- WDFW_OBay[WDFW_OBay$Year ==2004, ]
+ 
+bl<- ggplot(yr_2004, aes(CW))+
+   #geom_histogram(data= WDFW_GCove, fill = "blue", alpha = 0.2)+
+    geom_histogram(data = yr_2004[yr_2004$CW %in% 140:159 & yr_2004$ShellCondition %in% 1:2,], fill = "purple", alpha = 0.4) + 
+    geom_histogram(data = yr_2004[yr_2004$CW >= 160 & yr_2004$ShellCondition %in% 6:8, ], fill = "red", alpha = 0.4)
+ 
+ble<- ggplot(yr_2004, aes(CW))+
+   #geom_histogram(data= WDFW_GCove, fill = "blue", alpha = 0.2)+
+    geom_histogram(data = yr_2004[yr_2004$CW%in% 140:159 & yr_2004$ShellCondition %in% 1:2& yr_2004$Month %in% months[c(12, 1:2)], ], fill = "purple", alpha = 0.4) + 
+    geom_histogram(data = yr_2004[yr_2004$CW >= 160 & yr_2004$ShellCondition %in% 6:8 & yr_2004$Month %in% months[3:5], ], fill = "red", alpha = 0.6)
+```
+ 
+
+```{r}
+WDFW_Results_setTimes <- data.frame(Site = sites,
+                           M = rep(-999, length(sites)),
+                           Std_error = rep(-999, length(sites)))
+
+set_time_data <- vector("list", 11)
+for(dd in 1:length(sites)){
+  # data with set times of molt
+  set_time_data[[dd]] <- format.dat.mll(WDFW_list[[dd]], NA, NA, F)
+}
+
+
+for(d in 1:length(sites)){
+ Molt.LL2 <- mle2(minuslogl =  molt.LL.shell, 
+                 start = list(k1 = log(10), # lognormal params
+                k2 = log(10),
+                k3 = log(10),
+                M = log(0.3),
+                Mu1 = log(mean(WDFW_list[[d]]$Mu_sub1, na.rm = T)),
+                Mu2 = log(mean(WDFW_list[[d]]$Mu_sub2, na.rm = T))), 
+                data = list(dat = set_time_data[[d]], dat_total = WDFW_list[[d]]),
+                method="Nelder-Mead")
+     
+ print(summary(Molt.LL2)) #watch updates
+
+ WDFW_Results_setTimes[d, 2:3] <- exp(coef(summary(Molt.LL2))[6,1:2])
+}
+
+# plot of each site with estimate of mortality 
+ggplot(WDFW_Results_setTimes[WDFW_Results_setTimes$Site != "Squamish Hbr.", ], aes(x=Site, y= M, color= Site)) +
+  geom_errorbar(aes(ymin= M-Std_error, ymax=M+Std_error), width=.1) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1)) +
+  guides(color=FALSE)
+
+
+
+```
+
+
+
+## plot of data when alternating start times for prior & post-molt cut offs
+```{r}
+load("../Data/WDFW_MLL_Results_StartTime.Rdata")
+wdfw_mll_results$M <- exp(wdfw_mll_results$M)
+wdfw_mll_results$Std_error <- exp(wdfw_mll_results$Std_error)
+
+# plot the results by site
+s1 <- ggplot(wdfw_mll_results[wdfw_mll_results$Std_error < 50, ], aes(x =start.time, y = M, color= start.time))+
+  geom_errorbar(aes(ymin= M-Std_error, ymax= M+Std_error), width=.1) +
+  geom_point() + 
+  facet_wrap(~Site)+
+  guides(color=FALSE)
+
+s2 <- ggplot(wdfw_mll_results[wdfw_mll_results$Std_error >= 50, ], aes(x =start.time, y = M, color= start.time))+
+  geom_errorbar(aes(ymin= M-Std_error, ymax= M+Std_error), width=.1) +
+  geom_point() + 
+  facet_wrap(~Site)+
+  guides(color=FALSE)
+s1 + s2
+
+```
+
+# count.prior.post fxn - estiamte of pre/post-molt counts by year & site
+```{r}
+count.prior.post <- function(site_dat){
+  years <- unique(site_dat$Year)
+  count_dat <- NULL
+  for(y in 1:length(years)){
+    x <- data.frame(year = rep(years[y], times=2),
+                    Stage = c("Pre", "Post"),
+                    Count = rep(NA, 2))
+    # make dfs of pre & post molt periods
+    x$Count[1] <- nrow(site_dat[site_dat$Year == years[y] & site_dat$CW %in% 140:159 & site_dat$ShellCondition %in% 1:2 & site_dat$Month %in% c("January","February", "March"), ]) # pre-molt size
+    
+    x$Count[2] <- nrow(site_dat[site_dat$Year == years[y] & site_dat$CW >=160 & site_dat$ShellCondition %in% 6:8 & site_dat$Month %in% c( "April", "May", "June"), ]) # post-molt size
+    
+    count_dat <- rbind(count_dat, x)
+  }
+  return(count_dat)
+}
+
+Gcove <- count.prior.post(WDFW_GCove)
+    Gcove1 <- Gcove[Gcove$Count != 0,]
+    years <- unique(Gcove1$year)
+    full_yrs <- years[which(table(Gcove1$year) > 1)]
+  Gcove1 <- Gcove1[Gcove1$year %in% full_yrs, ]
+  Gcove1$Site = rep("GCove", nrow(Gcove1))
+  
+KBay <- count.prior.post(WDFW_KBay)
+    KBay1 <- KBay[KBay$Count != 0,]
+    years <- unique(KBay1$year)
+    full_yrs <- years[which(table(KBay1$year) > 1)]
+  KBay1 <- KBay1[KBay1$year %in% full_yrs, ]
+  KBay1$Site = rep("KBay", nrow(KBay1))
+
+KPt <- count.prior.post(WDFW_KPt)
+    KPt1 <- KPt[KPt$Count != 0,]
+    years <- unique(KPt1$year)
+    full_yrs <- years[which(table(KPt1$year) > 1)]
+  KPt1 <- KPt1[KPt1$year %in% full_yrs, ]
+  KPt1$Site = rep("KPt", nrow(KPt1))
+
+  Lil <- count.prior.post(WDFW_Lil)
+Lil1 <- Lil[Lil$Count != 0, ]
+years <- unique(Lil1$year)
+full_yrs <- years[which(table(Lil1$year) > 1)]
+Lil1 <- Lil1[Lil1$year %in% full_yrs, ]
+Lil1$Site = rep("Lil", nrow(Lil1))
+
+PGam <- count.prior.post(WDFW_PGam)
+PGam1 <- PGam[PGam$Count != 0, ]
+years <- unique(PGam1$year)
+full_yrs <- years[which(table(PGam1$year) > 1)]
+PGam1 <- PGam1[PGam1$year %in% full_yrs, ]
+PGam1$Site = rep("PGam", nrow(PGam1))
+
+Quil <- count.prior.post(WDFW_Quil)
+Quil1 <- Quil[Quil$Count != 0, ]
+years <- unique(Quil1$year)
+full_yrs <- years[which(table(Quil1$year) > 1)]
+Quil1 <- Quil1[Quil1$year %in% full_yrs, ]
+Quil1$Site = rep("Quil", nrow(Quil1))
+
+SHbr <- count.prior.post(WDFW_SHbr)
+SHbr1 <- SHbr[SHbr$Count != 0, ]
+years <- unique(SHbr1$year)
+full_yrs <- years[which(table(SHbr1$year) > 1)]
+SHbr1 <- SHbr1[SHbr1$year %in% full_yrs, ]
+SHbr1$Site = rep("SHbr", nrow(SHbr1))
+
+SBch <- count.prior.post(WDFW_SBch)
+SBch1 <- SBch[SBch$Count != 0, ]
+years <- unique(SBch1$year)
+full_yrs <- years[which(table(SBch1$year) > 1)]
+SBch1 <- SBch1[SBch1$year %in% full_yrs, ]
+SBch1$Site = rep("SBch", nrow(SBch1))
+
+Tyua <- count.prior.post(WDFW_Tyua)
+Tyua1 <- Tyua[Tyua$Count != 0, ]
+years <- unique(Tyua1$year)
+full_yrs <- years[which(table(Tyua1$year) > 1)]
+Tyua1 <- Tyua1[Tyua1$year %in% full_yrs, ]
+Tyua1$Site = rep("Tyua", nrow(Tyua1))
+
+Vland <- count.prior.post(WDFW_Vland)
+Vland1 <- Vland[Vland$Count != 0, ]
+years <- unique(Vland1$year)
+full_yrs <- years[which(table(Vland1$year) > 1)]
+Vland1 <- Vland1[Vland1$year %in% full_yrs, ]
+Vland1$Site = rep("Vland", nrow(Vland1))
+
+OBay <- count.prior.post(WDFW_OBay)
+OBay1 <- OBay[OBay$Count != 0, ]
+years <- unique(OBay1$year)
+full_yrs <- years[which(table(OBay1$year) > 1)]
+OBay1 <- OBay1[OBay1$year %in% full_yrs, ]
+OBay1$Site = rep("OBay", nrow(OBay1))
+
+
+pre_post_dat <- rbind(Gcove, KBay, KPt, SBch, Tyua, Vland, SHbr, Quil, PGam, Lil, OBay)
+#pre_post_dat$Site <- rep(c("GCove", "KBay", "KPt", "SBch"), each = 40)
+
+
+Pre_postNOZero_dat <- rbind(Gcove1, KBay1, KPt1, SBch1, Tyua1, Vland1, SHbr1, Quil1, PGam1, Lil1, OBay1)
+```
+
+# plots of count point data by site
+```{r}
+## CHANGE IT TO BE PRE-POST COLUMN AND ALL VALUES UNDER A COUNT COLUMN 
+ggplot(pre_post_dat, aes(x= year, y=Count, color=Stage))+
+  geom_point()+
+  facet_wrap(~Site)
+
+ggplot(Pre_postNOZero_dat[Pre_postNOZero_dat$year <= 2007, ], aes(x= year, y=Count, color=Stage))+
+  geom_point()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+
+  facet_wrap(~Site)
+
+```
+
+
+
+
+
+
+
+
+
+##################### NEWPORT, OR Data
+# use function to make Newport data formated by size & Sample Date
+```{r}
+load("../Data/Males_Molting.Rdata")
+
+Pot_data <- format.size.class(Molt_szn_data, NA)
+# catalogs dates to run through
+dates <- unique(Pot_data$Date)
+
+```
+
+
+# molt.LL function - NO shell cond
+```{r}
+
+molt.LL <- function(dat, k1, k2, k3, Mu1, Mu2, M){
+  months <- c("April", "August", "September")
+  years <- unique(dat$Year)
+  
+LL1 <- rep(NA, length(years))
+LL2 <- rep(NA, length(years))
+LL3 <- rep(NA, length(years))
+    # prep data for the specific year 
+
+  for(y in 1:length(years)){
+    prior <- dat[dat$Year == years[y] & dat$Month == months[1], ]
+    post <- dat[dat$Year == years[y] & dat$Month %in% months[2:3], ]
+  
+  # calculate the no. of juveniles --> sub-legal for next timestep [post-molt] 
+     #molt.in = sum(prior$Mu_juv, na.rm = T) * mean(prior$Molt.prb_juv, na.rm = T) 
+  # calculate the no. of sublegals --> legal for next timestep [post-molt]  
+    # molt.out = sum(prior$Mu_sub1, na.rm = T) * mean(prior$Molt.prb_sub1, na.rm = T) + 
+             #   sum(prior$Mu_sub2, na.rm = T) * mean(prior$Molt.prb_sub2, na.rm = T)
+     #molt.out = (nrow(Pre_molt_sub1) * mean(Pre_molt_sub1$Molt.prob)) + (nrow(Pre_molt_sub2) * mean(Pre_molt_sub2$Molt.prob)) 
+
+  DeltaT =  as.numeric(abs(difftime(mean(post$Date), mean(prior$Date), units = "weeks" ))) / 52
+    
+  # BOTH sub-legal classes as Log likelihoods at time 1 [ pre-molt]
+   LL1[y] <- -mean(dnbinom(x = na.omit(prior$Mu_sub1), mu = exp(Mu1), size = exp(k1), log = T))
+   LL2[y] <- -mean(dnbinom(x = na.omit(prior$Mu_sub2), mu = exp(Mu2), size = exp(k2), log = T))
+  
+    # account for crabs molting in & out 
+   lin_mu_1 = exp(Mu1) * mean(prior$Molt.prb_sub1, na.rm = T) * exp(-exp(M) * DeltaT) 
+   lin_mu_2 = exp(Mu2) * mean(prior$Molt.prb_sub2, na.rm = T) * exp(-exp(M) * DeltaT)
+      if(is.nan(lin_mu_1)){lin_mu_1 = 0}
+      if(is.nan(lin_mu_2)){lin_mu_2 = 0}
+     mu_post = lin_mu_1 + lin_mu_2
+   
+     # molt.prob is constant value for each year - avg 
+      #mean(prior$Mu_sub1) * molt.in - 
+     # mean(prior$Mu_sub2) * molt.out
+    
+  # sub legal males as log likelihood at time 2 [post-molt]
+    LL3[y] <- -mean(dnbinom(x = na.omit(post$Mu_legal), mu = mu_post, size = exp(k3), log = T))
+  }
+
+#if sub-legals1 or 2 have only NAs make 0
+  if(is.nan(mean(LL1, na.rm = T))){LL1 = 0}
+  if(is.nan(mean(LL2, na.rm = T))){LL2 = 0}
+  if(is.nan(mean(LL3, na.rm = T))){LL3 = 0}
+
+   sum_log_lik <- sum(mean(LL1,na.rm = T), mean(LL2, na.rm = T), mean(LL3, na.rm = T))
+  return(sum_log_lik )
+}
+
+#molt.LL(Pot_data, log(100),log(100), log(100), log(mean(Pot_data$Mu_sub1, na.rm = T)), log(mean(Pot_data$Mu_sub2, na.rm = T)), log(0.2))
+# molt.LL(param, Pot_data, Molt_data, 2014)
+# molt.LL(param, Pot_data, Molt_data, 2014)
+
+
+```
+
+
+# run the MLE for Newport data
+```{r}
+OSU_Results <- data.frame(Site = "Newport",
+                           M = rep(-999, 1),
+                           Std_error = rep(-999, 1))
+
+
+ # neg. LL for fxn that contains pre & post-molt LL's
+     Molt.LL <- mle2(minuslogl =  molt.LL, 
+                 start = list(k1 = log(10), # lognormal params
+                k2 = log(10),
+                k3 = log(10),
+                M = log(0.3),
+                Mu1 = log(mean(Pot_data$Mu_sub1, na.rm = T)),
+                Mu2 = log(mean(Pot_data$Mu_sub2, na.rm = T))), 
+                data = list(dat = Pot_data))
+
+
+ OSU_Results[1, 2] <- coef(summary(Molt.LL))[6,1]
+ OSU_Results[1, 3] <- coef(summary(Molt.LL))[6,2]
+
+OSU_Results$Upper <- exp(OSU_Results$M  + 1.96*OSU_Results$Std_error)
+  #OSU_Results$Std_error * 1.96 + OSU_Results$M
+OSU_Results$Lower <- exp(OSU_Results$M  - 1.96*OSU_Results$Std_error)
+  #OSU_Results$Std_error * 1.96 - OSU_Results$M  
+OSU_Results$M <- exp(OSU_Results$M)
+
+
+# plot of each site with estimate of mortality 
+ ggplot(OSU_Results, aes(x=Site, y= M, color= Site)) +
+  geom_errorbar(aes(ymin= Lower, ymax=Upper), width=.1) +
+   ylab("Natural Mortality Rate")+
+   ylim(0,.1)+
+   ggtitle("Newport Estimates")+
+  geom_point() +
+    theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1)) +
+   scale_color_viridis(discrete = T) +
+  guides(color=FALSE)
+ 
+# Molt.LL1 <- mle2(minuslogl =  molt.LL, 
+#                  start = list(k1 = log(10), # lognormal params
+#                 k2 = log(10),
+#                 k3 = log(10),
+#                 M = log(0.1),
+#                 Mu1 = log(mean(Pot_data$Mu_sub1, na.rm = T)),
+#                 Mu2 = log(mean(Pot_data$Mu_sub2, na.rm = T))), 
+#                 data = list(dat = Pot_data), 
+#                 method = 'L-BFGS-B',
+#            lower = rep(0, 6), upper = rep(Inf,6),
+#                 control = list(trace = 5, # tracing non-negative integers
+#                                fnscale= -1) ) # if fxn is negative then turns problem into amaximization problem
+```
+
+
+
+
+
+### OLD functions 
+
+# Neg.binom fxns
+```{r}
+
+# neg-binomial fxn using mu of each pot/ sample
+mtmp <- function(mu, k) {
+   -sum(dnbinom(x1, mu = mu, size = k, log = TRUE))
+}
+
+# neg-binomial for predicted next timestep
+mtmp_full <- function(mu, k, M) {
+  mu_final <- ( mu * exp(-M) + (mu * molt.in) - (mu * molt.out) )
+   -sum(dnbinom(x2, mu = mu_final, size = k, log = TRUE))
+  ## CANNOT HAVE NEGATIVE MUs GO THROUGH DBINOM
+  
+}
+```
+
+# Run the neg.binom fxns with our data & in MLE2
+```{r}
+load("~/Box Sync/Eder_Dungeness_2020/Data/D.crab_MLE.Rdata")
+years <- unique(Pot_data$Year)
+months <- as.character(unique(Pot_data$Month))
+MLE_Results_N0.prior <- NULL
+MLE_Results_N0.post  <- NULL
+MLE_Results_N1 <- NULL
+
+# run the mLE2 function over different scenarios of years
+  #' N0_prior : pop at pre-molt stage
+  #' N0_post : pop. at post-molt stage
+  #' N1: estiamted pop at next timestep w/ n0_prior mu
+ for(y in 1:length(years)){
+  sub_data_prior <- Pot_data[Pot_data$Year == years[y] & Pot_data$Month == months[1], ]
+  sub_data_prior <- sub_data_prior[sub_data_prior$Mu_sub != 0, ] # made != 0 b/c needs a finite value 
+  
+  sub_data_post <- Pot_data[Pot_data$Year == years[y] & Pot_data$Month %in% months[2:3], ]
+  sub_data_post <- sub_data_post[sub_data_post$Mu_sub != 0, ]
+
+# neg. LL for N0 PRE-MOLT
+  x1 <- rnbinom(n = nrow(sub_data_prior), mu = 2, size = 10)
+  N0_prior <- mle2( minuslogl = mtmp, 
+                 start = list(k = 1), 
+                 data =  list(mu = sub_data_prior$Mu_sub) )  
+  
+   MLE_Results_N0.prior <- list(index = years[y], summary(N0_prior) )
+
+
+ # neg. LL for N0 POST-MOLT
+  x2 <- rnbinom(n = nrow(sub_data_post), mu = 2, size = 10)
+  N0_post <- mle2(minuslogl = mtmp, 
+                 start = list(k = 1), 
+                 data = list(mu = sub_data_post$Mu_sub)) 
+  MLE_Results_N0.post <- list(index = years[y], summary(N0_post) )
+
+ 
+# values to calculate movement w/in size class [prior b4 post]
+   molt.in = sub_data_prior$Mu_juv * sub_data_prior$Molt.prb_juv
+   #molt.in <- molt.in[molt.in != 0]
+   molt.out = sub_data_prior$Mu_sub * sub_data_prior$Molt.prb_sub
+ 
+ # neg. LL for next timestep N1 - mu from m0_prior data
+  N1 <- mle2(minuslogl =  mtmp_full, 
+                 start = list(k = 2, M = 0.5), 
+                data = list(mu = sub_data_prior$Mu_sub) )
+   MLE_Results_N1 <- list(index = years[y], summary(N1) )
+}
+
+```
+
+
+# plot of data
+```{r}
+suppressWarnings( p0 <- profile(m0) )
+
+par(mfrow=c(1,2))
+plot(p0,plot.confstr=TRUE)
+```
+
